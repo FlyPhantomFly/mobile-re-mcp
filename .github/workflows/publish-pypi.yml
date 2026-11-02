@@ -59,7 +59,7 @@ jobs:
     permissions:
       id-token: write # lets the job request the OIDC token PyPI exchanges for a publish credential
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist/
