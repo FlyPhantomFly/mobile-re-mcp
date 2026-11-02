@@ -53,9 +53,9 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@types/plist": "^3.0.5",
-    "typescript": "^6.0.2"
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=22"
