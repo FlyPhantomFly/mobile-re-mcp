@@ -48,7 +48,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "adm-zip": "^0.6.0",
-    "plist": "^3.1.0",
+    "plist": "^5.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
