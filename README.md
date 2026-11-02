@@ -6,6 +6,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/mobile-re-mcp"><img src="https://img.shields.io/npm/v/mobile-re-mcp?color=0ea5e9&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/mobile-re-mcp"><img src="https://img.shields.io/npm/dm/mobile-re-mcp?color=0ea5e9&label=downloads" alt="npm downloads"></a>
+  <a href="https://pypi.org/project/mobile-re-mcp/"><img src="https://img.shields.io/pypi/v/mobile-re-mcp?color=3776ab&label=pypi" alt="PyPI version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178c6" alt="TypeScript">
   <img src="https://img.shields.io/badge/MCP-compatible-6366f1" alt="MCP">
@@ -13,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="#two-servers-one-name">Two servers</a> ·
   <a href="#features">Features</a> ·
   <a href="#installation">Installation</a> ·
   <a href="#tools">Tools</a> ·
@@ -26,6 +28,21 @@
 **mobile-re-mcp** is an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that gives Claude — and any MCP-compatible AI client — the ability to analyze Android APK and iOS IPA files for security issues through natural language conversation.
 
 Security researchers, mobile pentesters, and app developers can now audit permissions, extract API endpoints, detect hardcoded secrets, inspect Firebase configuration, and enumerate third-party SDKs by simply asking Claude — no scripting required.
+
+---
+
+## Two servers, one name
+This repo ships two MCP servers that work together and are released together under one version number.
+
+| | npm `mobile-re-mcp` | pip `mobile-re-mcp` |
+|---|---|---|
+| What it does | Read-only static analysis of APK and IPA files | Drives a test device: adb, Frida, mitmproxy, apktool, jadx, patching |
+| Language | TypeScript (this folder) | Python ([`python/`](python)) |
+| Install | `npm install -g mobile-re-mcp` | `pip install "mobile-re-mcp[all]"` |
+| Command | `mobile-re-mcp` | `mobile-re-mcp-py` |
+| Needs a device | No | For most tools |
+
+Start with the npm server to see what an app asks for and what it leaks, then use the Python server when you need the app running. The rest of this page is about the npm server. The Python server is documented in [python/README.md](python/README.md).
 
 ---
 

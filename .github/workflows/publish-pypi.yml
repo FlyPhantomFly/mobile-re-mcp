@@ -1,0 +1,69 @@
+name: Publish to PyPI
+
+# Publishes with PyPI "trusted publishing" (OIDC): no PyPI token is stored in GitHub.
+# One-time setup (pypi.org -> Your account -> Publishing -> Add a new pending publisher):
+#   PyPI project name : mobile-re-mcp
+#   Owner             : FlyPhantomFly
+#   Repository        : mobile-re-mcp
+#   Workflow filename : publish-pypi.yml
+#   Environment       : pypi
+# These values must match this file exactly.
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check release tag matches python/pyproject.toml
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          package_version="$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
+          if [ "${RELEASE_TAG}" != "v${package_version}" ] && [ "${RELEASE_TAG}" != "${package_version}" ]; then
+            echo "::error::Release tag '${RELEASE_TAG}' does not match python/pyproject.toml version '${package_version}'"
+            exit 1
+          fi
+
+      - name: Build
+        run: python -m pip install build twine && python -m build python && twine check python/dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: python/dist/
+          if-no-files-found: error
+
+  publish:
+    name: PyPI publish
+    needs: build
+    runs-on: ubuntu-latest
+    # Create this environment in GitHub (Settings -> Environments) and add yourself as a
+    # required reviewer, so every publish needs a manual approval.
+    environment: pypi
+    permissions:
+      id-token: write # lets the job request the OIDC token PyPI exchanges for a publish credential
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

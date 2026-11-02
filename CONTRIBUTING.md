@@ -16,7 +16,16 @@ Watch mode during development:
 npx tsc --watch
 ```
 
+Python server (needs Python 3.11+):
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e "python[dev]"
+ruff check python && pytest python/tests
+```
+
 ## Project Structure
+
+The Python server lives in `python/` (see its README). The rest of this section covers the TypeScript server.
 
 ```
 src/
@@ -113,7 +122,7 @@ For security vulnerabilities, see [SECURITY.md](SECURITY.md).
 
 ## Releasing (maintainers)
 
-Publishing uses npm trusted publishing from GitHub Actions (`.github/workflows/publish.yml`); no npm token is stored.
+Publishing uses trusted publishing from GitHub Actions for both registries (`.github/workflows/publish.yml` for npm, `publish-pypi.yml` for PyPI); no tokens are stored.
 
 **First release of a new package name** (the package must exist on npm before a trusted publisher can be configured):
 
@@ -126,8 +135,10 @@ npm publish                 # asks for your 2FA code
 
 Then on npmjs.com open the package, go to **Settings -> Trusted Publisher -> GitHub Actions**, and enter owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish.yml`, environment `npm-publish`. In GitHub, create the `npm-publish` environment (Settings -> Environments) and add a required reviewer.
 
-**Every later release:**
+**First release on PyPI** (the name is unclaimed, so use a pending publisher): on pypi.org go to Your account -> Publishing -> Add a new pending publisher and enter project `mobile-re-mcp`, owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish-pypi.yml`, environment `pypi`. In GitHub, create the `pypi` environment and add a required reviewer. To skip trusted publishing once, run `python -m build python && twine upload python/dist/*` with an API token.
 
-1. Update `CHANGELOG.md` and run `npm version <patch|minor|major>` (this edits `package.json` and creates the git tag `vX.Y.Z`).
-2. Push the commit and the tag, then create a GitHub Release for that tag.
-3. Approve the `npm-publish` deployment when GitHub asks. The workflow refuses to publish if the tag does not match the version in `package.json`.
+**Every later release** (both packages share one version):
+
+1. Update `CHANGELOG.md`, run `npm version <x.y.z> --no-git-tag-version`, and set the same `version` in `python/pyproject.toml`. CI fails if they differ. Commit.
+2. Tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`) and create a GitHub Release for that tag.
+3. The release starts `publish.yml` (npm) and `publish-pypi.yml` (PyPI). Approve the `npm-publish` and `pypi` deployments when GitHub asks. Each workflow refuses to publish if the tag does not match its own version.

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-02
+
+### Added
+- Python server in `python/`, published on PyPI as `mobile-re-mcp` (command `mobile-re-mcp-py`). It adds adb, Frida, mitmproxy, apktool/jadx, patching and signing tools. It is derived from `mobile-security-mcp` 0.1.4 (MIT), see `python/NOTICE.md`.
+- One release tag now publishes both packages, and CI fails if their versions differ. The npm package has no code changes in this release.
+
+### Security (Python server)
+- Every tool call is checked before it runs. File arguments reject a leading `-`, NUL bytes and protected places such as `~/.ssh`, `~/.config/gh` and shell rc files, and they follow `MOBILE_RE_MCP_ALLOWED_DIRS`.
+- `native_disasm` no longer lets `;` or `!` reach radare2, which allowed shell commands from a hostile symbol name.
+- `search_strings` passes the pattern to ripgrep with `-e` and `--`, so `--pre=...` can no longer run a program.
+- SSE listens on 127.0.0.1 only, rejects foreign Host headers, and needs `MOBILE_RE_MCP_TOKEN` for any other address. It used to bind 0.0.0.0 with no authentication.
+- mitmproxy listens on 127.0.0.1 only. Use `adb reverse` to reach it from the device.
+- Downloads are pinned to a release and checked against a SHA-256. The apktool wrapper script no longer comes from the `master` branch.
+- `install_tool` is off unless `MOBILE_RE_MCP_ALLOW_INSTALL=1`. pip installs no longer use `--break-system-packages` and cannot change an installed Frida.
+- Scratch files live in a private folder instead of fixed names in `/tmp`, and `frida_server_push` no longer picks up binaries from `/tmp`.
+- Target notes are stored under `~/.local/share/mobile-re-mcp` and the package name is validated. It could write into any folder before.
+
+### Changed (Python server)
+- Requires `mcp` 1.30 or newer and below 2. SDK 2 removed the handler decorators this server uses, so the port is still to do.
+- The heavy tools (frida, androguard, apkid, apkleaks, mitmproxy, quark-engine) are optional extras. `textual`, `rich` and `tomli` are no longer dependencies.
+- Settings moved to `~/.config/mobile-re-mcp/config.toml`. Nothing is created or added to `PATH` at import time any more.
+- Downloaded tools are apktool 2.12.1, jadx 1.5.6, uber-apk-signer 1.3.0, Il2CppDumper 6.7.46 and scrcpy 5.0.1 (Windows). adb is no longer downloaded because Google only publishes an unversioned build. The smali/baksmali installer is gone because its URLs return 404.
+
+### Fixed (Python server)
+- `apk_sign` looked for the signer jar in the current directory while the installer put it in `~/tools/signing`.
+- `frida_server_push` ignored a failed `chmod` on the device.
+- `frida_list_scripts` listed scripts that are not in the package. It now lists only scripts that exist, and your own go in `~/.local/share/mobile-re-mcp/frida_scripts`.
+- The SSE endpoint used a route type that cannot serve the message endpoint.
+- mitm helper scripts ran under whatever `python` was on `PATH` and now use the server's interpreter.
+
 ## [1.1.2] - 2026-11-02
 
 ### Fixed

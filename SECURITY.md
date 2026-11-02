@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.1.x   | ✅ Yes    |
+| 1.2.x   | ✅ Yes (npm and PyPI) |
+| 1.1.x   | ✅ npm only |
 | < 1.1   | ❌ No (command-injection fix; Node 22+ required from 1.1.0) |
 
 ## Reporting a Vulnerability
@@ -35,3 +36,5 @@ This tool is designed to **analyze** mobile apps for security issues.
 - False negatives / positives → open a regular GitHub issue
 - Vulnerabilities in the MCP server itself → report privately as above
 - Pattern bypass or evasion techniques → report privately
+
+The Python server can run adb, Frida and file operations on purpose, so those tools working is not a vulnerability. Report it privately if you can get around its argument checks, make it listen on a network address without a token, or make it run something the caller did not ask for.

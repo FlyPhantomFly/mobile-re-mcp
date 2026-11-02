@@ -1,0 +1,4 @@
+# Notice
+The Python server in this package is derived from `mobile-security-mcp` 0.1.4 on PyPI (MIT, by "mobile-security-mcp contributors"). Its public repository could not be found, so the source used here is the published 0.1.4 package. The original declares the MIT license but ships no license file or named copyright holder. The MIT notice is kept in `LICENSE` and the original contributors are credited there.
+Changes from 0.1.4: renamed to `mobile-re-mcp`, argument checks on every tool call, radare2 and ripgrep injection fixes, loopback-only SSE with a token for anything else, loopback-only mitmproxy, private scratch folders instead of `/tmp`, SHA-256 pinned downloads, notes stored in the user data folder, `install_tool` off by default, and the SDK pinned below 2.0.
+This project is not affiliated with or endorsed by the original authors.

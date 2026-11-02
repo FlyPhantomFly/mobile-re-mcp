@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mobile-re-mcp"
+version = "1.2.0"
+description = "Android dynamic analysis MCP server: adb, Frida, mitmproxy, apktool, jadx"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE.md"]
+authors = [{ name = "FlyPhantomFly" }, { name = "mobile-security-mcp contributors" }]
+keywords = ["mcp", "model-context-protocol", "android", "frida", "mobile-security", "reverse-engineering", "pentest", "adb", "apktool", "mitmproxy"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = ["mcp>=1.30,<2"]
+
+[project.optional-dependencies]
+frida = ["frida>=16.0.0", "frida-tools>=12.0.0"]
+static = ["androguard>=3.4.0a1", "apkid>=2.1.0", "apkleaks>=2.6.0"]
+network = ["mitmproxy>=10.0.0"]
+analysis = ["quark-engine>=23.0.0"]
+all = ["mobile-re-mcp[frida,static,network,analysis]"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+mobile-re-mcp-py = "mobile_re_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/FlyPhantomFly/mobile-re-mcp"
+Repository = "https://github.com/FlyPhantomFly/mobile-re-mcp"
+Issues = "https://github.com/FlyPhantomFly/mobile-re-mcp/issues"
+Changelog = "https://github.com/FlyPhantomFly/mobile-re-mcp/blob/master/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mobile_re_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE", "NOTICE.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "S102", "S307", "S602", "S605"]

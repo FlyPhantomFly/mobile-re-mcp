@@ -36,3 +36,13 @@ npm-debug.log*
 
 # Claude memory (local only)
 .claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+python/dist/
+python/build/

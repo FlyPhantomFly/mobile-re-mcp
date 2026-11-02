@@ -15,10 +15,10 @@ jobs:
         node-version: [22, 24]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -34,3 +34,47 @@ jobs:
 
       - name: Verify dist output
         run: test -f dist/index.js
+
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install
+        run: python -m pip install -e "./python[dev]"
+
+      - name: Lint
+        run: ruff check python
+
+      - name: Test
+        run: pytest python/tests -q
+
+      - name: Build distributions
+        run: python -m pip install build twine && python -m build python && twine check python/dist/*
+
+  versions:
+    name: npm and PyPI versions match
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compare versions
+        run: |
+          npm_version="$(node -p "require('./package.json').version")"
+          py_version="$(python3 -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
+          echo "npm ${npm_version}, python ${py_version}"
+          if [ "${npm_version}" != "${py_version}" ]; then
+            echo "::error::package.json (${npm_version}) and python/pyproject.toml (${py_version}) versions differ"
+            exit 1
+          fi

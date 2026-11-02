@@ -1,0 +1,9 @@
+# Defaults only. Put your own settings in ~/.config/mobile-re-mcp/config.toml (or $MOBILE_RE_MCP_CONFIG).
+[signing]
+# Absolute path to uber-apk-signer.jar. Empty uses ~/tools/signing/uber-apk-signer.jar
+jar_path = ""
+# Empty keystore uses uber-apk-signer's built-in debug keystore. Passwords given here show up in the process list.
+keystore_path = ""
+keystore_password = ""
+key_alias = ""
+key_password = ""
