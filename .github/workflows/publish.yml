@@ -26,7 +26,7 @@ jobs:
       id-token: write # lets the job request the OIDC token npm exchanges for a publish credential
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
