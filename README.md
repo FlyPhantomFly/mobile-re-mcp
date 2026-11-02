@@ -271,4 +271,4 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 [FlyPhantomFly](https://github.com/FlyPhantomFly). Original work © 2025 Serhatcck, retained under the MIT license.
+[MIT](LICENSE) © 2026 [FlyPhantomFly](https://github.com/FlyPhantomFly)
