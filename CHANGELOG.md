@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-02
+
+### Changed
+- Rewrote the README, CONTRIBUTING and SECURITY in plainer language. The README now opens with a worked example, has install steps for Claude Code, opencode and Claude Desktop, and lists each tool once with what it needs.
+- The Python README now covers setup, a first session and the safety settings.
+
+### Fixed
+- Python server: messages about a missing tool now point to `mobile-re-mcp-py --setup`. They used to mention `install_tool`, which is off unless you enable it.
+
 ## [1.2.0] - 2026-11-02
 
 ### Added

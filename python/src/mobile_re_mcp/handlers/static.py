@@ -32,7 +32,7 @@ def _missing(tool: str) -> dict:
         "status": "missing_tool",
         "tool": tool,
         "error": f"'{tool}' not found on PATH.",
-        "hint": f"Run install_tool('{tool}') or see README for manual steps.",
+        "hint": f"Run mobile-re-mcp-py --setup, or install '{tool}' yourself.",
     }
 
 

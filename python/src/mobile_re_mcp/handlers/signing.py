@@ -42,7 +42,7 @@ class SigningHandler:
                 "status": "missing_tool",
                 "tool": "uber-apk-signer",
                 "error": f"uber-apk-signer jar not found at '{jar_path}'.",
-                "hint": "Run install_tool('uber-apk-signer') or set [signing].jar_path in ~/.config/mobile-re-mcp/config.toml.",
+                "hint": "Run mobile-re-mcp-py --setup, or set [signing].jar_path in ~/.config/mobile-re-mcp/config.toml.",
             }
 
         cmd = ["java", "-jar", jar_path, "--apks", apk_path]

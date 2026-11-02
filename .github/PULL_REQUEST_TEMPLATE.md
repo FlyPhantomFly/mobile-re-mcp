@@ -18,6 +18,7 @@
 - [ ] Tested against a real APK
 - [ ] Tested against a real IPA
 - [ ] `npm run build` passes with no TypeScript errors
+- [ ] `ruff check python` and `pytest python/tests` pass (if you touched the Python server)
 
 ## Checklist
 

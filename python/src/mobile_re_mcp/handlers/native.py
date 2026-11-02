@@ -35,7 +35,7 @@ def _missing(tool: str, hint: str = "") -> dict:
     return {
         "status": "missing_tool",
         "tool": tool,
-        "error": f"'{tool}' not found. Run install_tool('{tool}').",
+        "error": f"'{tool}' not found. Run mobile-re-mcp-py --setup, or install '{tool}' yourself.",
         "hint": hint,
     }
 

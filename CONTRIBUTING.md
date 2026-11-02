@@ -1,86 +1,50 @@
-# Contributing to mobile-re-mcp
+# Contributing
+Bug reports, new detection patterns and new tools are all welcome. For anything bigger than a small fix, open an issue first so we can agree on the approach.
 
-Thank you for your interest in contributing! This guide covers everything you need to get started.
-
-## Development Setup
-
+## Setting up
 ```bash
 git clone https://github.com/FlyPhantomFly/mobile-re-mcp.git
 cd mobile-re-mcp
-npm install
+npm ci
 npm run build
 ```
-
-Watch mode during development:
-```bash
-npx tsc --watch
-```
-
-Python server (needs Python 3.11+):
+`npx tsc --watch` rebuilds as you edit. The Python server needs Python 3.11 or newer:
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -e "python[dev]"
 ruff check python && pytest python/tests
 ```
 
-## Project Structure
+## How the TypeScript server is laid out
+`src/index.ts` registers the tools. Each tool lives in its own file under `src/tools/android/` or `src/tools/ios/`, and the shared helpers are in `src/tools/shared/`: `patterns.ts` holds every secret pattern, and `safe-exec.ts` runs external programs and checks input files.
 
-The Python server lives in `python/` (see its README). The rest of this section covers the TypeScript server.
+## Adding a tool
+1. Create `src/tools/<platform>/<tool-name>.ts` and export an object with `description`, `schema` (a plain object of zod fields) and `handler`.
+2. Register it in `src/index.ts` with `server.registerTool`, wrapping the schema in `z.object(...)` like the others.
+3. Add a row to the tools table in `README.md`.
 
-```
-src/
-  index.ts                    # MCP server entry — tool registration
-  tools/
-    shared/
-      patterns.ts             # Centralized regex pattern registry
-    android/
-      api-extractor.ts        # android_api_extractor
-      manifest-analyzer.ts    # apk_manifest_analyzer
-      permissions-checker.ts  # apk_permissions_checker
-      google-services.ts      # android_google_services
-      secrets-scanner.ts      # android_secrets_scanner
-    ios/
-      manifest-analyzer.ts    # ios_manifest_analyzer
-      permissions-checker.ts  # ios_permissions_checker
-      entitlements-checker.ts # ios_entitlements_checker
-      binary-strings.ts       # ios_binary_strings
-      frameworks-detector.ts  # ios_frameworks_detector
-      google-services.ts      # ios_google_services
-      secrets-scanner.ts      # ios_secrets_scanner
-```
-
-## Adding a New Tool
-
-1. Create `src/tools/<platform>/<tool-name>.ts`
-2. Export an object with `description`, `schema` (zod), and `handler`
-3. Register it in `src/index.ts` with `server.tool(...)`
-4. Add an entry to the tools table in `README.md`
-
-Example skeleton:
-
+A tool looks like this:
 ```typescript
 import { z } from "zod";
+import { checkInputFile, errorResult } from "../shared/safe-exec.js";
 
 export const myNewTool = {
-  description: "One clear sentence describing what this tool does.",
-
+  description: "One clear sentence about what the tool reports.",
   schema: {
-    file_path: z.string().describe("Absolute path to the file"),
+    apk_path: z.string().describe("Absolute path to the APK"),
   },
-
-  handler: async (args: { file_path: string }) => {
-    // implementation
+  handler: async (args: { apk_path: string }) => {
+    const apk = checkInputFile(args.apk_path, "apk_path", [".apk"], { requireZipMagic: true });
+    if (!apk.ok) return errorResult(apk.error);
     return { content: [{ type: "text" as const, text: "result" }] };
   },
 };
 ```
+Never build a shell command from tool arguments. Use `run(command, [args])` from `safe-exec.ts`, which starts the program without a shell.
 
-## Adding Detection Patterns
-
-All secret and Google service patterns live in `src/tools/shared/patterns.ts`. To add a new pattern:
-
+## Adding a detection pattern
+Add an entry to `SECRET_PATTERNS` in `src/tools/shared/patterns.ts`. Both secrets scanners pick it up.
 ```typescript
-// In SECRET_PATTERNS array:
 {
   name: "My Service API Key",
   pattern: /my-service-[A-Za-z0-9]{32}/g,
@@ -88,57 +52,27 @@ All secret and Google service patterns live in `src/tools/shared/patterns.ts`. T
   description: "My Service API key",
 },
 ```
+Risk is one of `CRITICAL`, `HIGH`, `MEDIUM` or `LOW`. To teach `ios_frameworks_detector` about an SDK, add it to `KNOWN_FRAMEWORKS` in `src/tools/ios/frameworks-detector.ts` with a category and a one-line description.
 
-Risk levels: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW`
+## Pull requests
+Keep each one to a single change, say what changed and why, and run `npm run build` first. If you touched the Python server, run `ruff check python` and `pytest python/tests` too. If you can, try the change on a real APK or IPA, and leave sensitive details out of what you paste. Add a line to `CHANGELOG.md`.
 
-The pattern will automatically be picked up by both `android_secrets_scanner` and `ios_secrets_scanner`.
-
-## Adding Known Frameworks
-
-To add a framework to `ios_frameworks_detector`, add an entry to the `KNOWN_FRAMEWORKS` map in `src/tools/ios/frameworks-detector.ts`:
-
-```typescript
-MySDK: {
-  category: "Analytics",
-  description: "My SDK description",
-  risk: "Optional: explain what data it collects",
-},
-```
-
-## Pull Request Guidelines
-
-- Keep PRs focused — one feature or fix per PR
-- Add a short description of what changed and why
-- Run `npm run build` before submitting — no TypeScript errors
-- Test your changes against a real APK or IPA if possible
-
-## Reporting Issues
-
-Use the GitHub issue templates:
-- **Bug report** — tool crashes or produces wrong output
-- **Feature request** — new tool idea or pattern addition
-
-For security vulnerabilities, see [SECURITY.md](SECURITY.md).
-
-## Releasing (maintainers)
-
-Publishing uses trusted publishing from GitHub Actions for both registries (`.github/workflows/publish.yml` for npm, `publish-pypi.yml` for PyPI); no tokens are stored.
-
-**First release of a new package name** (the package must exist on npm before a trusted publisher can be configured):
-
+## Releasing
+This part is for maintainers. Both packages share one version number and are published from GitHub Actions through trusted publishing, so no registry tokens are stored in GitHub.
+For the first npm release, publish by hand once so the package exists, then add the trusted publisher on npmjs.com (owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish.yml`, environment `npm-publish`):
 ```bash
-npm install && npm run build
-npm pack --dry-run          # check the tarball contents
+npm ci && npm run build
+npm pack --dry-run
 npm login
-npm publish                 # asks for your 2FA code
+npm publish --access public
 ```
+For the first PyPI release, add a pending publisher on pypi.org under Your account, Publishing (project `mobile-re-mcp`, same owner and repository, workflow `publish-pypi.yml`, environment `pypi`). In GitHub, create both environments under Settings, Environments, and add yourself as a required reviewer.
+For every release after that:
+1. Update `CHANGELOG.md`, run `npm version <x.y.z> --no-git-tag-version`, and set the same `version` in `python/pyproject.toml`. CI fails if they differ. Commit and push.
+2. Tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`) and create a GitHub Release for the tag.
+3. The release starts `publish.yml` for npm and `publish-pypi.yml` for PyPI. Approve both deployments when GitHub asks. Each workflow refuses to publish if the tag does not match its own version.
 
-Then on npmjs.com open the package, go to **Settings -> Trusted Publisher -> GitHub Actions**, and enter owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish.yml`, environment `npm-publish`. In GitHub, create the `npm-publish` environment (Settings -> Environments) and add a required reviewer.
+If trusted publishing is not working, run `npm publish --access public` by hand, or `python -m build python && twine upload python/dist/*`, and push only the tag without creating a Release.
 
-**First release on PyPI** (the name is unclaimed, so use a pending publisher): on pypi.org go to Your account -> Publishing -> Add a new pending publisher and enter project `mobile-re-mcp`, owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish-pypi.yml`, environment `pypi`. In GitHub, create the `pypi` environment and add a required reviewer. To skip trusted publishing once, run `python -m build python && twine upload python/dist/*` with an API token.
-
-**Every later release** (both packages share one version):
-
-1. Update `CHANGELOG.md`, run `npm version <x.y.z> --no-git-tag-version`, and set the same `version` in `python/pyproject.toml`. CI fails if they differ. Commit.
-2. Tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`) and create a GitHub Release for that tag.
-3. The release starts `publish.yml` (npm) and `publish-pypi.yml` (PyPI). Approve the `npm-publish` and `pypi` deployments when GitHub asks. Each workflow refuses to publish if the tag does not match its own version.
+## Reporting issues
+Use the issue templates for bugs and feature requests. Security problems go through [SECURITY.md](SECURITY.md), not a public issue.
