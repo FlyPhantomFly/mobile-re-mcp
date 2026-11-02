@@ -1,0 +1,66 @@
+{
+  "name": "mobile-re-mcp",
+  "version": "1.1.2",
+  "description": "Mobile app security analysis MCP server for Android APK and iOS IPA files",
+  "bin": {
+    "mobile-re-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "type": "module",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/index.js",
+    "test:tools": "node test-tools.mjs",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mobile-security",
+    "android",
+    "ios",
+    "apk",
+    "ipa",
+    "security",
+    "pentest",
+    "reverse-engineering",
+    "firebase",
+    "secrets-detection",
+    "static-analysis",
+    "claude",
+    "ai"
+  ],
+  "author": "FlyPhantomFly",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FlyPhantomFly/mobile-re-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FlyPhantomFly/mobile-re-mcp/issues"
+  },
+  "homepage": "https://github.com/FlyPhantomFly/mobile-re-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "adm-zip": "^0.6.0",
+    "plist": "^3.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@types/node": "^22.0.0",
+    "@types/plist": "^3.0.5",
+    "typescript": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
