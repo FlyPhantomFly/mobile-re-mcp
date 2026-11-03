@@ -19,28 +19,25 @@ export const apkManifestAnalyzer = {
     if (!apk.ok) return errorResult(apk.error);
     const apkPath = apk.path;
 
-    // Try aapt first (faster, no full decompile needed), fallback to apktool
-    let manifestXml = extractManifestViaAapt(apkPath);
+    // Try aapt first (faster, no full decompile needed), fall back to apktool.
+    // If aapt prints something we cannot read, try apktool before giving up.
     let source = "aapt";
+    let manifestText = extractManifestViaAapt(apkPath);
+    let root = manifestText ? parseManifest(manifestText) : null;
 
-    if (!manifestXml) {
-      const result = extractManifestViaApktool(apkPath);
-      if (!result) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Error: Could not extract AndroidManifest.xml. Install apktool or aapt.",
-            },
-          ],
-        };
-      }
-      manifestXml = result;
+    if (!root) {
+      manifestText = extractManifestViaApktool(apkPath);
+      root = manifestText ? parseManifest(manifestText) : null;
       source = "apktool";
     }
 
-    const report = analyzeManifest(manifestXml, source);
-    return { content: [{ type: "text" as const, text: report }] };
+    if (!root) {
+      return errorResult(
+        "Could not read AndroidManifest.xml. Install aapt (Android build-tools) or apktool and make sure it is on PATH."
+      );
+    }
+
+    return { content: [{ type: "text" as const, text: analyzeManifest(root, source) }] };
   },
 };
 
@@ -68,33 +65,131 @@ function extractManifestViaApktool(apkPath: string): string | null {
   }
 }
 
-function analyzeManifest(content: string, source: string): string {
+// ---------------------------------------------------------------------------
+// Parsing. aapt (v1), aapt2 and apktool all print the manifest differently.
+// ---------------------------------------------------------------------------
+
+export interface ManifestNode {
+  tag: string;
+  attrs: Record<string, string>;
+  children: ManifestNode[];
+}
+
+/** Turn aapt, aapt2 or apktool output into a tree. Returns null if no <manifest> element is found. */
+export function parseManifest(text: string): ManifestNode | null {
+  const root = /^\s*E: /m.test(text) ? parseAaptTree(text) : parseXml(text);
+  return root && root.tag === "manifest" ? root : null;
+}
+
+function normalizeKey(raw: string): string {
+  const key = raw.trim();
+  const ns = key.match(/^https?:\/\/[^\s]*?\/res\/android:([\w.-]+)$/);
+  if (ns) return `android:${ns[1]}`;
+  const other = key.match(/^https?:\/\/[^\s]*:([\w.-]+)$/);
+  return other ? other[1] : key;
+}
+
+function normalizeAaptValue(raw: string): string {
+  const value = raw.trim();
+  const quoted = value.match(/^"((?:[^"\\]|\\.)*)"/);
+  if (quoted) return quoted[1];
+  const typed = value.match(/^\(type (0x[0-9a-fA-F]+)\)(0x[0-9a-fA-F]+)/);
+  if (typed) {
+    const [, type, hex] = typed;
+    const n = parseInt(hex, 16);
+    if (type === "0x12") return n === 0 ? "false" : "true"; // boolean, true is 0xffffffff
+    if (type === "0x10") return String(n); // decimal integer
+    if (type === "0x1") return `@${hex}`; // resource reference
+    return hex;
+  }
+  return value.replace(/\s+\(Raw:.*\)$/, "");
+}
+
+function parseAaptTree(text: string): ManifestNode | null {
+  const stack: { node: ManifestNode; indent: number }[] = [];
+  let root: ManifestNode | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const element = line.match(/^(\s*)E: ([\w:.-]+)/);
+    if (element) {
+      const node: ManifestNode = { tag: element[2], attrs: {}, children: [] };
+      const indent = element[1].length;
+      while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+      if (stack.length) stack[stack.length - 1].node.children.push(node);
+      else if (!root) root = node;
+      stack.push({ node, indent });
+      continue;
+    }
+    const attr = line.match(/^\s*A: ([^=(]+?)(?:\(0x[0-9a-fA-F]+\))?=(.*)$/);
+    if (attr && stack.length) {
+      stack[stack.length - 1].node.attrs[normalizeKey(attr[1])] = normalizeAaptValue(attr[2]);
+    }
+  }
+  return root;
+}
+
+function parseXml(text: string): ManifestNode | null {
+  const stack: ManifestNode[] = [];
+  let root: ManifestNode | null = null;
+  const tagPattern = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g;
+  for (const m of text.matchAll(tagPattern)) {
+    if (!m[2]) continue; // comment or declaration
+    if (m[1]) {
+      stack.pop();
+      continue;
+    }
+    const attrs: Record<string, string> = {};
+    for (const a of m[3].matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+      attrs[a[1]] = a[2] ?? a[3];
+    }
+    const node: ManifestNode = { tag: m[2], attrs, children: [] };
+    if (stack.length) stack[stack.length - 1].children.push(node);
+    else if (!root) root = node;
+    if (!m[4]) stack.push(node);
+  }
+  return root;
+}
+
+// ---------------------------------------------------------------------------
+// Analysis
+// ---------------------------------------------------------------------------
+
+const COMPONENT_TAGS = ["activity", "activity-alias", "service", "receiver", "provider"] as const;
+
+function fullName(name: string | undefined, pkg: string): string {
+  if (!name) return "(unnamed)";
+  if (name.startsWith(".")) return pkg + name;
+  if (!name.includes(".")) return pkg ? `${pkg}.${name}` : name;
+  return name;
+}
+
+function listNames(names: string[]): string {
+  const shown = names.slice(0, 5).join(", ");
+  return names.length > 5 ? `${shown} … +${names.length - 5} more` : shown;
+}
+
+export function analyzeManifest(root: ManifestNode, source: string): string {
   const lines: string[] = [];
   const warnings: string[] = [];
+  const pkg = root.attrs["package"] ?? "";
 
   lines.push(`=== Android Manifest Analysis ===`);
   lines.push(`Source: ${source}\n`);
 
-  // Package & version
-  const packageMatch = content.match(/package(?:="| A=")([\w.]+)/);
-  const versionCodeMatch = content.match(/versionCode(?:="| A=")(\d+)/);
-  const versionNameMatch = content.match(/versionName(?:="| A=")([\w.\-]+)/);
-
-  if (packageMatch) lines.push(`Package Name : ${packageMatch[1]}`);
-  if (versionCodeMatch) lines.push(`Version Code : ${versionCodeMatch[1]}`);
-  if (versionNameMatch) lines.push(`Version Name : ${versionNameMatch[1]}`);
+  if (pkg) lines.push(`Package Name : ${pkg}`);
+  const versionCode = root.attrs["android:versionCode"];
+  const versionName = root.attrs["android:versionName"];
+  if (versionCode) lines.push(`Version Code : ${versionCode}`);
+  if (versionName) lines.push(`Version Name : ${versionName}`);
 
   // Security flags on <application>
+  const app = root.children.find((c) => c.tag === "application");
+  const flag = (name: string) => (app?.attrs[`android:${name}`] ?? "").toLowerCase() === "true";
+  const debuggable = flag("debuggable");
+  const allowBackup = flag("allowBackup");
+  const cleartext = flag("usesCleartextTraffic");
+  const networkSecurity = Boolean(app?.attrs["android:networkSecurityConfig"]);
+
   lines.push(`\n--- Security Flags ---`);
-
-  const debuggable = /android:debuggable(?:="| A=")true/i.test(content) ||
-    /debuggable.*True/i.test(content);
-  const allowBackup = /android:allowBackup(?:="| A=")true/i.test(content) ||
-    /allowBackup.*True/i.test(content);
-  const cleartext = /android:usesCleartextTraffic(?:="| A=")true/i.test(content) ||
-    /usesCleartextTraffic.*True/i.test(content);
-  const networkSecurity = /android:networkSecurityConfig/i.test(content);
-
   lines.push(`  debuggable          : ${debuggable ? "TRUE  ⚠ DANGER" : "false"}`);
   lines.push(`  allowBackup         : ${allowBackup ? "TRUE  ⚠ WARNING" : "false"}`);
   lines.push(`  usesCleartextTraffic: ${cleartext ? "TRUE  ⚠ DANGER" : "false"}`);
@@ -105,54 +200,63 @@ function analyzeManifest(content: string, source: string): string {
   if (cleartext) warnings.push("usesCleartextTraffic=true — app allows unencrypted HTTP traffic");
 
   // Components
-  const activityPattern = /(?:activity|activity-alias)[^>]*?android:name(?:="| A=")([\w.]+)/g;
-  const servicePattern = /service[^>]*?android:name(?:="| A=")([\w.]+)/g;
-  const receiverPattern = /receiver[^>]*?android:name(?:="| A=")([\w.]+)/g;
-  const providerPattern = /provider[^>]*?android:name(?:="| A=")([\w.]+)/g;
-
-  const activities = [...content.matchAll(activityPattern)].map((m) => m[1]);
-  const services = [...content.matchAll(servicePattern)].map((m) => m[1]);
-  const receivers = [...content.matchAll(receiverPattern)].map((m) => m[1]);
-  const providers = [...content.matchAll(providerPattern)].map((m) => m[1]);
+  const components = (app?.children ?? []).filter((c) => (COMPONENT_TAGS as readonly string[]).includes(c.tag));
+  const named = (tags: string[]) =>
+    components.filter((c) => tags.includes(c.tag)).map((c) => fullName(c.attrs["android:name"], pkg));
+  const activities = named(["activity", "activity-alias"]);
+  const services = named(["service"]);
+  const receivers = named(["receiver"]);
+  const providers = named(["provider"]);
 
   lines.push(`\n--- Components ---`);
-  lines.push(`  Activities (${activities.length}): ${activities.slice(0, 5).join(", ")}${activities.length > 5 ? ` … +${activities.length - 5} more` : ""}`);
-  lines.push(`  Services   (${services.length}): ${services.slice(0, 5).join(", ")}${services.length > 5 ? ` … +${services.length - 5} more` : ""}`);
-  lines.push(`  Receivers  (${receivers.length}): ${receivers.slice(0, 5).join(", ")}${receivers.length > 5 ? ` … +${receivers.length - 5} more` : ""}`);
-  lines.push(`  Providers  (${providers.length}): ${providers.slice(0, 5).join(", ")}${providers.length > 5 ? ` … +${providers.length - 5} more` : ""}`);
+  lines.push(`  Activities (${activities.length}): ${listNames(activities)}`);
+  lines.push(`  Services   (${services.length}): ${listNames(services)}`);
+  lines.push(`  Receivers  (${receivers.length}): ${listNames(receivers)}`);
+  lines.push(`  Providers  (${providers.length}): ${listNames(providers)}`);
 
-  // Exported components
-  const exportedPattern = /android:exported(?:="| A=")true[\s\S]{0,200}?android:name(?:="| A=")([\w.]+)/g;
-  const exported = [...content.matchAll(exportedPattern)].map((m) => m[1]);
+  // Exported components: explicit android:exported="true"
+  const hasIntentFilter = (c: ManifestNode) => c.children.some((x) => x.tag === "intent-filter");
+  const exported = components.filter((c) => (c.attrs["android:exported"] ?? "").toLowerCase() === "true");
+  // Exported by default: an intent filter and no android:exported attribute (apps targeting Android 11 or lower)
+  const exportedByDefault = components.filter(
+    (c) => c.attrs["android:exported"] === undefined && hasIntentFilter(c) && c.tag !== "provider"
+  );
 
   lines.push(`\n--- Exported Components (android:exported="true") ---`);
   if (exported.length === 0) {
     lines.push(`  None detected`);
   } else {
     lines.push(`  ⚠ ${exported.length} exported component(s):`);
-    for (const e of exported) {
-      lines.push(`    - ${e}`);
-    }
+    for (const c of exported) lines.push(`    - ${fullName(c.attrs["android:name"], pkg)} (${c.tag})`);
     warnings.push(`${exported.length} component(s) with android:exported="true" — potential attack surface`);
   }
 
-  // Intent filters (implies exported if not explicitly set to false in Android 12+)
-  const intentFilterPattern = /<intent-filter[\s\S]*?<action[\s\S]*?android:name(?:="| A=")([\w.]+)/g;
-  const intentActions = [...content.matchAll(intentFilterPattern)].map((m) => m[1]);
+  if (exportedByDefault.length > 0) {
+    lines.push(`\n--- Exported by default (intent filter, no android:exported) ---`);
+    for (const c of exportedByDefault) lines.push(`    - ${fullName(c.attrs["android:name"], pkg)} (${c.tag})`);
+    warnings.push(
+      `${exportedByDefault.length} component(s) have an intent filter and no android:exported, so they are exported on apps targeting Android 11 or lower`
+    );
+  }
 
-  if (intentActions.length > 0) {
-    lines.push(`\n--- Intent Filters (${intentActions.length} actions) ---`);
-    for (const action of [...new Set(intentActions)].slice(0, 15)) {
-      lines.push(`    - ${action}`);
+  // Intent filter actions
+  const actions: string[] = [];
+  for (const c of components) {
+    for (const f of c.children.filter((x) => x.tag === "intent-filter")) {
+      for (const a of f.children.filter((x) => x.tag === "action")) {
+        if (a.attrs["android:name"]) actions.push(a.attrs["android:name"]);
+      }
     }
+  }
+  if (actions.length > 0) {
+    lines.push(`\n--- Intent Filters (${actions.length} actions) ---`);
+    for (const action of [...new Set(actions)].slice(0, 15)) lines.push(`    - ${action}`);
   }
 
   // Summary
   if (warnings.length > 0) {
     lines.push(`\n=== Security Warnings ===`);
-    for (const w of warnings) {
-      lines.push(`  ⚠ ${w}`);
-    }
+    for (const w of warnings) lines.push(`  ⚠ ${w}`);
   } else {
     lines.push(`\n✓ No critical manifest security issues detected.`);
   }

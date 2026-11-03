@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-11-03
+
+### Fixed
+- `apk_manifest_analyzer` misread the output of `aapt`, which it prefers when installed. `aapt` prints booleans as `(type 0x12)0xffffffff` and the component names on separate lines, so the old patterns found nothing. An APK with `debuggable`, `allowBackup`, cleartext traffic and exported components could be reported as clean. The manifest is now parsed properly from `aapt`, `aapt2` and `apktool` output, and relative class names are shown in full.
+- The same tool now lists components that are exported by default through an intent filter, and returns an error instead of a clean result when it cannot read the manifest.
+
+### Added
+- Parser tests in `test/`, run with `node --test "test/*.test.mjs"` after a build, and a CI step for them.
+
+### Changed
+- The README example now uses an APK.
+
 ## [1.2.2] - 2026-11-03
 
 ### Changed

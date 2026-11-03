@@ -9,36 +9,41 @@ An MCP server that reads Android APKs and iOS IPAs and tells your AI assistant w
 This repo also holds a second server for the live side of the work (adb, Frida, mitmproxy and patching on a real device). It is written in Python and described [further down](#the-python-server).
 
 ## An example
-The sample below is an IPA made for this README: a small notes app with a few deliberate mistakes in it. You ask:
-> Check /home/me/apks/NotesDemo.ipa for anything risky.
+The sample below is an APK made for this README: a small notes app with a few deliberate mistakes in it. You ask:
+> Check /home/me/apks/NotesDemo.apk for anything risky.
 
-The assistant runs the manifest analyzer and the secrets scanner. The output is trimmed here, and key values are masked:
+The assistant runs the manifest analyzer, the permissions checker and the secrets scanner. The output is trimmed here, and key values are masked:
 ```text
-=== iOS Info.plist Analysis ===
-Bundle ID   : com.example.notes
-Version     : 2.3.1 (build 231)
-Min iOS     : 15.0
---- URL Schemes (Deep Links) ---
-  notesdemo://
-  fb1234567890://
---- App Transport Security (ATS) ---
-  NSAllowsArbitraryLoads        : true
-=== Security Warnings ===
-  ⚠ Short/generic URL scheme detected — may be vulnerable to scheme hijacking
-  ⚠ NSAllowsArbitraryLoads=true — all HTTP traffic is allowed, bypassing ATS
-  ⚠ Background location mode enabled — app can track location when not in foreground
+=== Android Manifest Analysis ===
+Package Name : com.example.notes
+Version Name : 2.3.1
+--- Security Flags ---
+  debuggable          : TRUE  ⚠ DANGER
+  allowBackup         : TRUE  ⚠ WARNING
+  usesCleartextTraffic: TRUE  ⚠ DANGER
+--- Exported Components (android:exported="true") ---
+  ⚠ 5 exported component(s):
+    - com.example.notes.MainActivity (activity)
+    - com.example.notes.ShareActivity (activity)
+    - com.example.notes.SyncService (service)
+    - com.example.notes.BootReceiver (receiver)
+    - com.example.notes.NotesProvider (provider)
 ```
 ```text
-=== iOS Secrets Scanner ===
---- Found in Resource Files ---
+=== APK Permissions Analysis ===
+--- Dangerous Permissions (4) ---
+  ⚠ android.permission.CAMERA
+  ⚠ android.permission.ACCESS_FINE_LOCATION
+  ⚠ android.permission.READ_CONTACTS
+  ⚠ android.permission.WRITE_EXTERNAL_STORAGE
+```
+```text
+=== Android Secrets Scanner ===
 [CRITICAL] AWS Access Key ID
   → AKIA…DEMO
---- Found in Binary (not in resources) ---
-[CRITICAL] Stripe Secret Key — server-side key in client
-  → sk_live_…DEMO
-⚠ 2 CRITICAL finding(s) — immediate review required.
+⚠ 1 CRITICAL finding(s) — immediate review required.
 ```
-From there you can keep talking: "Which of those warnings matter if the app only talks to my own API?" The assistant already has the findings and can answer.
+From there you can keep talking: "Which of those exported components can I drop?" The assistant already has the findings and can answer. iOS works the same way with an IPA and the `ios_*` tools.
 ![Demo recording](docs/demo.gif)
 
 ## Install

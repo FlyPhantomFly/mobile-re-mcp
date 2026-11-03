@@ -8,7 +8,7 @@ cd mobile-re-mcp
 npm ci
 npm run build
 ```
-`npx tsc --watch` rebuilds as you edit. The Python server needs Python 3.11 or newer:
+`npx tsc --watch` rebuilds as you edit, and `node --test "test/*.test.mjs"` runs the parser tests against the build. The Python server needs Python 3.11 or newer:
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -e "python[dev]"
@@ -40,6 +40,8 @@ export const myNewTool = {
   },
 };
 ```
+If a tool parses the output of another program, add a fixture under `test/fixtures/` taken from the real program and a test beside it. The manifest analyzer once read `aapt` output wrongly and called a bad APK clean, which is why those tests exist.
+
 Never build a shell command from tool arguments. Use `run(command, [args])` from `safe-exec.ts`, which starts the program without a shell.
 
 ## Adding a detection pattern
@@ -55,7 +57,7 @@ Add an entry to `SECRET_PATTERNS` in `src/tools/shared/patterns.ts`. Both secret
 Risk is one of `CRITICAL`, `HIGH`, `MEDIUM` or `LOW`. To teach `ios_frameworks_detector` about an SDK, add it to `KNOWN_FRAMEWORKS` in `src/tools/ios/frameworks-detector.ts` with a category and a one-line description.
 
 ## Pull requests
-Keep each one to a single change, say what changed and why, and run `npm run build` first. If you touched the Python server, run `ruff check python` and `pytest python/tests` too. If you can, try the change on a real APK or IPA, and leave sensitive details out of what you paste. Add a line to `CHANGELOG.md`.
+Keep each one to a single change, say what changed and why, and run `npm run build` and the parser tests first. If you touched the Python server, run `ruff check python` and `pytest python/tests` too. If you can, try the change on a real APK or IPA, and leave sensitive details out of what you paste. Add a line to `CHANGELOG.md`.
 
 ## Releasing
 This part is for maintainers. Both packages share one version number and are published from GitHub Actions through trusted publishing, so no registry tokens are stored in GitHub.
@@ -66,7 +68,7 @@ npm pack --dry-run
 npm login
 npm publish --access public
 ```
-npm does not check those fields when you save them, and a wrong one fails the workflow with ENEEDAUTH or E404. Newer trusted publishers allow only staged publishing unless you tick `npm publish`, which is the usual cause. To see what is saved, or to set it from the terminal:
+npm does not check those fields when you save them, and a wrong one fails the workflow with ENEEDAUTH or E404. Newer trusted publishers also need `npm publish` ticked under Allowed actions. To see what is saved, or to set it from the terminal:
 ```bash
 npm trust list mobile-re-mcp
 npm trust github mobile-re-mcp --file publish.yml --repo FlyPhantomFly/mobile-re-mcp --env npm-publish --allow-publish -y
@@ -77,7 +79,7 @@ For every release after that:
 2. Tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`) and create a GitHub Release for the tag.
 3. The release starts `publish.yml` for npm and `publish-pypi.yml` for PyPI. Approve both deployments when GitHub asks. Each workflow refuses to publish if the tag does not match its own version.
 
-To test the npm login without releasing, run the Publish to npm workflow by hand (Actions, Run workflow). It prints the claims GitHub sends and npm's answer, and never publishes.
+To test the npm login without releasing, run the Publish to npm workflow by hand (`gh workflow run publish.yml`, or Actions, Run workflow). It prints the claims GitHub sends and npm's answer, and never publishes. `HTTP 201` means the login works. `HTTP 404` with "package not found" means npm cannot match the login to the saved entry. That happened here even though `npm trust list` looked right, and revoking the entry and creating it again fixed it.
 
 If you already published a version by hand, the workflow notices and finishes green without publishing again. If trusted publishing is not working, run `npm publish --access public` by hand, or `python -m build python && twine upload python/dist/*`, and push only the tag without creating a Release.
 

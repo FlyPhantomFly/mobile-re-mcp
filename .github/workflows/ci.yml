@@ -35,6 +35,9 @@ jobs:
       - name: Verify dist output
         run: test -f dist/index.js
 
+      - name: Parser tests
+        run: node --test "test/*.test.mjs"
+
   python:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

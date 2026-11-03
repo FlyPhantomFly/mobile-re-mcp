@@ -1,6 +1,6 @@
 {
   "name": "mobile-re-mcp",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Mobile app security analysis MCP server for Android APK and iOS IPA files",
   "bin": {
     "mobile-re-mcp": "dist/index.js"
