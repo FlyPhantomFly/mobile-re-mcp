@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Python README now covers setup, a first session and the safety settings.
 
 ### Fixed
+- npm publish workflow: it now ends green when the version is already on npm, which happens when you publish by hand, and a failed publish prints which trusted publisher settings to check. It no longer passes `--provenance`, because trusted publishing adds provenance itself. You can also run it by hand from the Actions tab to see what npm says about the login, without publishing anything.
 - Python server: messages about a missing tool now point to `mobile-re-mcp-py --setup`. They used to mention `install_tool`, which is off unless you enable it.
 
 ## [1.2.0] - 2026-11-02

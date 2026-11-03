@@ -59,12 +59,17 @@ Keep each one to a single change, say what changed and why, and run `npm run bui
 
 ## Releasing
 This part is for maintainers. Both packages share one version number and are published from GitHub Actions through trusted publishing, so no registry tokens are stored in GitHub.
-For the first npm release, publish by hand once so the package exists, then add the trusted publisher on npmjs.com (owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish.yml`, environment `npm-publish`):
+For the first npm release, publish by hand once so the package exists, then add the trusted publisher on npmjs.com under the package's Settings (owner `FlyPhantomFly`, repository `mobile-re-mcp`, workflow `publish.yml`, environment `npm-publish`, and `npm publish` ticked under Allowed actions):
 ```bash
 npm ci && npm run build
 npm pack --dry-run
 npm login
 npm publish --access public
+```
+npm does not check those fields when you save them, and a wrong one fails the workflow with ENEEDAUTH or E404. Newer trusted publishers allow only staged publishing unless you tick `npm publish`, which is the usual cause. To see what is saved, or to set it from the terminal:
+```bash
+npm trust list mobile-re-mcp
+npm trust github mobile-re-mcp --file publish.yml --repo FlyPhantomFly/mobile-re-mcp --env npm-publish --allow-publish -y
 ```
 For the first PyPI release, add a pending publisher on pypi.org under Your account, Publishing (project `mobile-re-mcp`, same owner and repository, workflow `publish-pypi.yml`, environment `pypi`). In GitHub, create both environments under Settings, Environments, and add yourself as a required reviewer.
 For every release after that:
@@ -72,7 +77,9 @@ For every release after that:
 2. Tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`) and create a GitHub Release for the tag.
 3. The release starts `publish.yml` for npm and `publish-pypi.yml` for PyPI. Approve both deployments when GitHub asks. Each workflow refuses to publish if the tag does not match its own version.
 
-If trusted publishing is not working, run `npm publish --access public` by hand, or `python -m build python && twine upload python/dist/*`, and push only the tag without creating a Release.
+To test the npm login without releasing, run the Publish to npm workflow by hand (Actions, Run workflow). It prints the claims GitHub sends and npm's answer, and never publishes.
+
+If you already published a version by hand, the workflow notices and finishes green without publishing again. If trusted publishing is not working, run `npm publish --access public` by hand, or `python -m build python && twine upload python/dist/*`, and push only the tag without creating a Release.
 
 ## Reporting issues
 Use the issue templates for bugs and feature requests. Security problems go through [SECURITY.md](SECURITY.md), not a public issue.

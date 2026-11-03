@@ -112,4 +112,4 @@ The command is `mobile-re-mcp-py`. The setup, tool list and safety notes are in 
 Build with `npm ci && npm run build`. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to add a tool or a detection pattern, [SECURITY.md](SECURITY.md) is for reporting vulnerabilities, and [CHANGELOG.md](CHANGELOG.md) lists what changed.
 
 ## License
-MIT. © 2026 FlyPhantomFly.
+MIT. The npm server began as a fork of Serhatcck's mobile-security-mcp (© 2025 Serhatcck), with changes © 2026 FlyPhantomFly. The Python server is derived from mobile-security-mcp 0.1.4 on PyPI, see [python/NOTICE.md](python/NOTICE.md).

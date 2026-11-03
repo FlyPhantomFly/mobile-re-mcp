@@ -1,16 +1,21 @@
 name: Publish to npm
 
-# Publishes with npm "trusted publishing" (OIDC): no npm token is stored in GitHub.
-# One-time setup (npmjs.com -> package -> Settings -> Trusted Publisher -> GitHub Actions):
+# Publishes with npm trusted publishing (OIDC), so no npm token is stored in GitHub.
+# One-time setup on npmjs.com (package -> Settings -> Trusted Publisher -> GitHub Actions):
 #   Organization/user : FlyPhantomFly
 #   Repository        : mobile-re-mcp
 #   Workflow filename : publish.yml
 #   Environment       : npm-publish
-# These values must match this file exactly (a mismatch shows up as E404 on publish).
+#   Allowed actions   : npm publish (tick it, this workflow publishes directly)
+# These values must match this file exactly. npm does not check them when you save, so a
+# mistake only shows up here as ENEEDAUTH or E404. `npm trust list mobile-re-mcp` shows what is saved.
 
 on:
   release:
     types: [published]
+  # Run it by hand (Actions -> Publish to npm -> Run workflow) to test the npm login without releasing.
+  # It prints what GitHub tells npm and what npm answers, and never publishes.
+  workflow_dispatch:
 
 permissions: {}
 
@@ -26,12 +31,12 @@ jobs:
       id-token: write # lets the job request the OIDC token npm exchanges for a publish credential
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           package-manager-cache: false # never use caches in release builds
@@ -49,7 +54,26 @@ jobs:
             exit 1
           fi
 
+      # Manual runs only. Asks GitHub for the login token npm will see, prints its public claims,
+      # then asks npm to exchange it and prints the answer (the returned token is hidden).
+      - name: Diagnose the npm login (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          response="$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm%3Aregistry.npmjs.org")"
+          ID_TOKEN="$(printf '%s' "${response}" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).value")"
+          echo "::add-mask::${ID_TOKEN}"
+          export ID_TOKEN
+          echo "Claims GitHub sends to npm:"
+          node -e '
+            const p = JSON.parse(Buffer.from(process.env.ID_TOKEN.split(".")[1], "base64url").toString());
+            for (const k of ["aud", "sub", "repository", "repository_id", "repository_owner", "job_workflow_ref", "ref", "environment", "event_name", "runner_environment"]) console.log("  " + k + ": " + p[k]);
+          '
+          echo "npm's answer to the token exchange for ${package_name}:"
+          curl -sS -X POST -H "Authorization: Bearer ${ID_TOKEN}" -w "\nHTTP %{http_code}\n" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${package_name}" | sed -E 's/"token" *: *"[^"]*"/"token":"<hidden>"/'
+
       - name: Check release tag matches package.json version
+        if: github.event_name == 'release'
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -59,11 +83,37 @@ jobs:
             exit 1
           fi
 
+      # If you already published this version by hand, there is nothing left to do,
+      # so the run ends green instead of failing on "version already exists".
+      - name: Check whether this version is already on npm
+        id: registry
+        if: github.event_name == 'release'
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          if output="$(npm view "${package_name}@${package_version}" version 2>&1)"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${package_name}@${package_version} is already on npm, so there is nothing to publish."
+          elif printf '%s' "${output}" | grep -q "E404"; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Could not check the npm registry: ${output}"
+            exit 1
+          fi
+
       - name: Install dependencies
+        if: github.event_name == 'release' && steps.registry.outputs.published != 'true'
         run: npm ci
 
       - name: Build
+        if: github.event_name == 'release' && steps.registry.outputs.published != 'true'
         run: npm run build
 
+      # Trusted publishing adds provenance on its own, so no --provenance flag is needed.
       - name: Publish
-        run: npm publish --provenance --access public --loglevel verbose
+        if: github.event_name == 'release' && steps.registry.outputs.published != 'true'
+        run: |
+          if ! npm publish --access public; then
+            echo "::error::npm publish failed. If the log says ENEEDAUTH or E404, open npmjs.com, then mobile-re-mcp, Settings, Trusted Publisher, and check: user FlyPhantomFly, repository mobile-re-mcp, workflow publish.yml, environment npm-publish, and that 'npm publish' is ticked under Allowed actions."
+            exit 1
+          fi
