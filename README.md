@@ -1,4 +1,8 @@
-# mobile-re-mcp
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/social-preview-dark.svg">
+  <img src="docs/social-preview-light.svg" alt="mobile-re-mcp" width="100%">
+</picture>
+
 [![npm](https://img.shields.io/npm/v/mobile-re-mcp?color=0ea5e9&label=npm)](https://www.npmjs.com/package/mobile-re-mcp) [![PyPI](https://img.shields.io/pypi/v/mobile-re-mcp?color=3776ab&label=pypi)](https://pypi.org/project/mobile-re-mcp/) [![CI](https://img.shields.io/github/actions/workflow/status/FlyPhantomFly/mobile-re-mcp/ci.yml?label=CI)](https://github.com/FlyPhantomFly/mobile-re-mcp/actions) [![MIT](https://img.shields.io/badge/license-MIT-10b981)](LICENSE)
 
 An MCP server that reads Android APKs and iOS IPAs and tells your AI assistant what is inside: permissions, exported components, hardcoded secrets, Firebase config, App Transport Security settings, entitlements and bundled SDKs. You ask in plain language, the assistant calls the right tool, and the findings come back. It only reads files and never runs the app.
@@ -112,4 +116,4 @@ The command is `mobile-re-mcp-py`. The setup, tool list and safety notes are in 
 Build with `npm ci && npm run build`. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to add a tool or a detection pattern, [SECURITY.md](SECURITY.md) is for reporting vulnerabilities, and [CHANGELOG.md](CHANGELOG.md) lists what changed.
 
 ## License
-MIT. The npm server began as a fork of Serhatcck's mobile-security-mcp (© 2025 Serhatcck), with changes © 2026 FlyPhantomFly. The Python server is derived from mobile-security-mcp 0.1.4 on PyPI, see [python/NOTICE.md](python/NOTICE.md).
+MIT. © 2026 FlyPhantomFly.
