@@ -136,11 +136,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 
 ### Python (PyPI) — extensions
 
-**E-PY-1. Ship the built-in Frida script library (the fix for F-PY-3)**
-- *Current:* catalogue of 8 named scripts, zero `.js` files shipped; `frida_list_scripts` returns 0; `frida_find_bytes` is dead in a fresh install.
-- *Proposal:* add the 8 `.js` files to `frida_scripts/` (the shipped scripts must match their catalogue descriptions; `memory_scan.js` is the critical one since two tools depend on it), plus a test asserting every catalogue entry resolves to a file on disk. Keep user overrides in `~/.local/share/mobile-re-mcp/frida_scripts` as the primary search path.
-- *Effort:* M (writing/curating 8 scripts well).
-- *Need shipped first:* none — this unblocks `frida_run_script`, `frida_find_bytes` and the "first session" story in the README.
+**E-PY-1. Ship the built-in Frida script library (the fix for F-PY-3) — *Current: shipped*** — **Status: fixed**
+- *Was:* catalogue of 8 named scripts, zero `.js` files shipped; `frida_list_scripts` returns 0; `frida_find_bytes` is dead in a fresh install.
+- *Done:* all 8 `.js` files live in `frida_scripts/` matching their catalogue descriptions — `ssl_pinning_universal`, `root_detection_bypass` (Java+native), `frida_detection_bypass` (`Socket.connect` port-scan defeat, native `strstr`/`ptrace`), `crypto_monitor` (Cipher opmode stashed at `init`), `memory_scan` (exact `var SEARCH_STRING/SEARCH_HEX/MAX_RESULTS` lines `frida_find_bytes` patch), `method_tracer`, `storage_monitor`, `network_monitor`. Every script registers a re-armed `recv('config', …)` handler (UPPER-case primary keys, lowercase accepted) — the forward-compatible half of the E-PY-6 protocol. Catalogue `usage` strings document the config keys. Tests: library completeness, user-override precedence, per-script config handler presence, and the `memory_scan` var/message contract; `node --check` = 8/8. Live: `frida_list_scripts` returns 8; `frida_get_script('memory_scan')` returns the real source with the contract lines.
 
 **E-PY-2. androguard 4.x compatibility pass (the fix for F-PY-1)**
 - *Current:* `manifest_parse`, `analyze_code`, `find_crypto_usage` fail or mis-behave under the androguard that `[static]` installs today.

@@ -123,17 +123,61 @@ def test_every_pin_has_a_real_sha256():
         assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest), name
 
 
-def test_frida_script_library_only_lists_existing_files(isolated_env):
+def test_frida_script_library_ships_every_catalogue_script(isolated_env):
+    """F-PY-3: the package ships its 8 scripts — the library must not be empty."""
     from mobile_re_mcp.frida_scripts import index
 
-    assert index.list_scripts() == []
+    expected = {
+        "ssl_pinning_universal", "root_detection_bypass", "frida_detection_bypass",
+        "crypto_monitor", "memory_scan", "method_tracer", "storage_monitor",
+        "network_monitor",
+    }
+    assert {s["name"] for s in index.SCRIPT_CATALOGUE} == expected
+    on_disk = {m["name"] for m in index.list_scripts()}
+    assert on_disk == expected, f"missing on disk: {sorted(expected - on_disk)}"
+    for meta in index.list_scripts():
+        content = index.get_script_content(meta["name"])
+        assert content and content.strip(), meta["name"]
+
+
+def test_user_script_override_precedence(isolated_env):
+    from mobile_re_mcp.frida_scripts import index
+
     d = isolated_env / ".local" / "share" / "mobile-re-mcp" / "frida_scripts"
     d.mkdir(parents=True)
     (d / "crypto_monitor.js").write_text("// mine")
-    names = [m["name"] for m in index.list_scripts()]
-    assert names == ["crypto_monitor"]
-    assert index.get_script_content("crypto_monitor") == "// mine"
-    assert index.get_script_content("ssl_pinning_universal") is None
+    assert index.get_script_content("crypto_monitor") == "// mine"  # override wins
+    # ...but every other script still resolves to the shipped library
+    assert index.get_script_content("ssl_pinning_universal") is not None
+    assert "// mine" not in index.get_script_content("memory_scan")
+
+
+def test_shipped_scripts_register_and_rearm_the_config_protocol():
+    """Every script accepts {type:'config', ...}: UPPER primary, lowercase fallback."""
+    from mobile_re_mcp.frida_scripts import index
+
+    for meta in index.SCRIPT_CATALOGUE:
+        src = index.get_script_content(meta["name"])
+        # one registration + one re-arm inside the handler
+        assert src.count('recv("config"') >= 2, meta["name"]
+        assert "function _onConfig" in src, meta["name"]
+
+
+def test_memory_scan_contract_for_frida_find_bytes():
+    """frida_find_bytes str.replace-patches these exact lines — they must exist."""
+    from mobile_re_mcp.frida_scripts import index
+
+    src = index.get_script_content("memory_scan")
+    assert 'var SEARCH_STRING = "";' in src
+    assert 'var SEARCH_HEX = "";' in src
+    assert 'var MAX_RESULTS = 50;' in src
+    # ...and produces the message shapes the handler consumes
+    # (pretty-printed across lines: `type: "match",` then `match: {`)
+    assert 'type: "match",' in src and "match: {" in src
+    assert 'type: "scan_complete"' in src
+    # method_tracer's handler contract
+    tracer = index.get_script_content("method_tracer")
+    assert 'type: "method_trace"' in tracer
 
 
 def test_signer_jar_is_never_relative(isolated_env):

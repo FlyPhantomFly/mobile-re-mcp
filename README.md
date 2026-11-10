@@ -141,7 +141,7 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | Tool | What it does | Needs |
 | --- | --- | --- |
 | `frida_list_scripts` | list available hook scripts by category (ssl_pinning, root_detection, crypto, memory, hooks, storage, network), including your own | nothing |
-| `frida_get_script` | read the JS source of a named script | nothing |
+| `frida_get_script` | read the JS source of a named script (8 ship with the package; yours override) | nothing |
 | `frida_run_script` | spawn + inject a named built-in script in one call, with optional config overrides | frida |
 
 **Anti-detection (2)**
@@ -226,7 +226,7 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 
 Five MCP **resources**: `knowledge://detection-patterns` (root/Frida/emulator/integrity checks and their counters), `knowledge://bypass-playbooks` (escalation ladders), `knowledge://framework-fingerprints` (React Native, Flutter, Unity, Xamarin from artefacts), `knowledge://crypto-patterns` (hardcoded keys, weak IVs, insecure ciphers) and `knowledge://common-mistakes`. Seven MCP **prompts** wrap the same packs: `master-workflow`, `first-look`, `rasp-assess`, `bypass-ssl`, `bypass-root`, `bypass-frida`, `stuck`. Your client's prompt picker lists them; they cost nothing to call.
 
-The bypass scripts in `rasp_bypass` are built in. The `frida_list_scripts` library starts empty until you add your own scripts to `~/.local/share/mobile-re-mcp/frida_scripts`; names in the catalogue only appear once the file exists on disk.
+Eight bypass/monitor scripts ship with the package (`ssl_pinning_universal`, `root_detection_bypass`, `frida_detection_bypass`, `crypto_monitor`, `memory_scan`, `method_tracer`, `storage_monitor`, `network_monitor`) — every one accepts live config: post or send `{type:'config', ...}` (UPPER-case keys as shown by `frida_list_scripts` usage strings; lowercase accepted too). Drop your own script into `~/.local/share/mobile-re-mcp/frida_scripts` using the same catalogue filename and yours is used instead of the shipped one.
 
 ### Files and settings
 

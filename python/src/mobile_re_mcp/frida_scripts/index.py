@@ -38,7 +38,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "ssl_pinning",
         "description": "Universal SSL pinning bypass — OkHttp3/4, TrustKit, Conscrypt, native BoringSSL",
         "tags": ["ssl", "pinning", "okhttp", "trustkit", "conscrypt", "boring"],
-        "usage": "frida -U -f <package> -l ssl_pinning_universal.js --no-pause",
+        "usage": "frida -U -f <package> -l ssl_pinning_universal.js --no-pause; config: {type:'config', MODE:'log'}",
     },
     {
         "name": "root_detection_bypass",
@@ -46,7 +46,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "root_detection",
         "description": "Comprehensive root detection bypass — File.exists, Runtime.exec, PackageManager, Build props, RootBeer, native libc stat/access",
         "tags": ["root", "magisk", "supersu", "rootbeer", "libc"],
-        "usage": "frida -U -f <package> -l root_detection_bypass.js --no-pause",
+        "usage": "frida -U -f <package> -l root_detection_bypass.js --no-pause; config: {type:'config', VERBOSE:'true'}",
     },
     {
         "name": "frida_detection_bypass",
@@ -54,7 +54,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "frida_detection",
         "description": "Multi-layer Frida self-detection bypass — /proc/maps, port 27042, dlopen, strstr, debug flag",
         "tags": ["frida", "anti-detection", "port", "proc", "dlopen"],
-        "usage": "Inject early via frida_spawn; combine with hluda server for RASP-hardened apps",
+        "usage": "Inject early via frida_spawn; combine with hluda server for RASP-hardened apps; config: {type:'config', QUIET:'true'}",
     },
     {
         "name": "crypto_monitor",
@@ -62,7 +62,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "crypto",
         "description": "Monitor all javax.crypto operations — log key material, IV, plaintext, ciphertext, HMAC, hash",
         "tags": ["crypto", "aes", "hmac", "sha", "key", "iv", "cipher"],
-        "usage": "frida -U -f <package> -l crypto_monitor.js --no-pause",
+        "usage": "frida -U -f <package> -l crypto_monitor.js --no-pause; config: {type:'config', INCLUDE_HEX:'false'}",
     },
     {
         "name": "memory_scan",
@@ -70,7 +70,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "memory",
         "description": "Scan all rw- process memory regions for a UTF-8 string or hex byte pattern",
         "tags": ["memory", "scan", "bytes", "search", "heap"],
-        "usage": "Inject then send config: {type:'config', search_string:'my_secret'} or search_hex:'deadbeef'",
+        "usage": "Inject then send config: {type:'config', SEARCH_STRING:'my_secret'} or SEARCH_HEX:'deadbeef', MAX_RESULTS:50",
     },
     {
         "name": "method_tracer",
@@ -78,7 +78,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "hooks",
         "description": "Trace all methods (or a specific one) on a Java class — log args and return values",
         "tags": ["trace", "hook", "java", "class", "method", "args"],
-        "usage": "Inject then send config: {type:'config', class_name:'com.example.Foo', method_name:''}",
+        "usage": "Inject then send config: {type:'config', CLASS_NAME:'com.example.Foo', METHOD_NAME:''}",
     },
     {
         "name": "storage_monitor",
@@ -86,7 +86,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "storage",
         "description": "Monitor SharedPreferences writes, SQLite queries, FileInputStream/OutputStream, KeyStore",
         "tags": ["storage", "sharedprefs", "sqlite", "file", "keystore"],
-        "usage": "frida -U -f <package> -l storage_monitor.js --no-pause",
+        "usage": "frida -U -f <package> -l storage_monitor.js --no-pause; config: {type:'config', CAPTURE_VALUES:'true'}",
     },
     {
         "name": "network_monitor",
@@ -94,7 +94,7 @@ SCRIPT_CATALOGUE: list[dict] = [
         "category": "network",
         "description": "Monitor OkHttp requests/responses, HttpURLConnection, WebView.loadUrl, DNS lookups",
         "tags": ["network", "http", "okhttp", "webview", "dns", "request"],
-        "usage": "frida -U -f <package> -l network_monitor.js --no-pause",
+        "usage": "frida -U -f <package> -l network_monitor.js --no-pause; config: {type:'config', CAPTURE_BODY:'true'}",
     },
 ]
 
