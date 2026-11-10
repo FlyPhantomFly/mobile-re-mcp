@@ -8,6 +8,8 @@ node_modules/
 *.apk
 *.ipa
 *.aab
+# ...except our own 5 KB fixture (built by tests/fixtures/build_notesdemo.sh)
+!python/tests/fixtures/notesdemo.apk
 
 # apktool / decompiled output folders
 *_decompiled/

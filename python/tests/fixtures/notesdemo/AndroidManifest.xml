@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source manifest for the test fixture APK (built by ../build_notesdemo.sh).
+     Deliberate findings, used by test_androguard_tools.py:
+       - debuggable / allowBackup / usesCleartextTraffic all true
+       - 4 dangerous permissions (+ 1 normal)
+       - MainActivity explicitly exported; AutoExportActivity has an intent-filter
+         and no exported attribute with targetSdk 28, so it is exported *by default*
+       - ExportActivity / ShareActivity / QuietReceiver are NOT exported -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.notes"
+    android:versionCode="23"
+    android:versionName="2.3.1">
+
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="28"/>
+
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <application
+        android:label="Notes Demo"
+        android:debuggable="true"
+        android:allowBackup="true"
+        android:usesCleartextTraffic="true">
+
+        <activity android:name="com.example.notes.MainActivity" android:exported="true"/>
+        <activity android:name="com.example.notes.ExportActivity" android:exported="false"/>
+        <activity android:name="com.example.notes.ShareActivity"/>
+        <activity android:name=".AutoExportActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <service android:name="com.example.notes.SyncService" android:exported="true"/>
+        <service android:name="com.example.notes.IdleService" android:exported="false"/>
+
+        <receiver android:name="com.example.notes.BootReceiver" android:exported="true"/>
+        <receiver android:name="com.example.notes.QuietReceiver"/>
+
+        <provider
+            android:name="com.example.notes.NotesProvider"
+            android:authorities="com.example.notes.files"
+            android:exported="true"/>
+    </application>
+</manifest>
