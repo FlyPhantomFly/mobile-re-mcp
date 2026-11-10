@@ -37,7 +37,7 @@ The npm server performs zero writes except in `os.tmpdir()` and never accepts a 
 
 ## Part 1 — Python server: findings
 
-### F-PY-1. androguard API drift breaks three tools on the pinned extra — **[verified live]**
+### F-PY-1. androguard API drift breaks three tools on the pinned extra — **[verified live]** — **Status: fixed**
 
 `[analysis]`-adjacent extra `[static]` declares `androguard>=3.4.0a1` (pyproject.toml:28), so today's installs get **4.1.4** (verified live: `check_tools` reports `androguard 4.1.4`). In androguard 4.x the APK class no longer has `get_activity_is_exported()`, and `Analysis` cross-reference accessors return different shapes. Results measured live on `com.termux.boot`:
 
