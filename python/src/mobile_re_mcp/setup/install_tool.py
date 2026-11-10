@@ -58,14 +58,11 @@ _PIP_TOOLS: dict[str, str] = {
     "frida": "frida",
     "frida-tools": "frida-tools",
     "objection": "objection",
-    "fridump": "fridump",
     "androguard": "androguard",
     "apkid": "apkid",
     "apkleaks": "apkleaks",
     "quark-engine": "quark-engine",
     "mitmproxy": "mitmproxy",
-    "medusa-framework": "medusa-framework",
-    "medusa": "medusa-framework",
     "capstone": "capstone",
     "keystone-engine": "keystone-engine",
     "hermes-dec": "hermes-dec",
@@ -74,6 +71,18 @@ _PIP_TOOLS: dict[str, str] = {
 _NPM_TOOLS: dict[str, str] = {
     "apk-mitm": "apk-mitm",
     "frida-compile": "frida-compile",
+}
+
+# Tools with no automated recipe — the assistant must run the manual steps.
+# 'medusa' is deliberately absent from _PIP_TOOLS: the PyPI package 'medusa'
+# is the foofus.net SSH login cracker, NOT the Medusa RE framework.
+_MANUAL_TOOLS: dict[str, str] = {
+    "medusa": "Medusa RE framework — see https://github.com/Ch0pin/medusa "
+    "(the PyPI 'medusa' package is an unrelated SSH cracker; do not install it)",
+    "medusa-framework": "Medusa RE framework — see https://github.com/Ch0pin/medusa "
+    "(the PyPI 'medusa' package is an unrelated SSH cracker; do not install it)",
+    "fridump": "fridump was dropped from the setup recipes: frida_memdump does "
+    "not use it (it walks memory maps through its own Frida session)",
 }
 
 
@@ -284,6 +293,10 @@ def install_tool(tool_name: str) -> dict:
             "message": "apktool already bundles smali/baksmali. Standalone jars are on Maven Central (com.android.tools.smali).",
         }
 
+    manual = _MANUAL_TOOLS.get(tool_name)
+    if manual:
+        return {"status": "manual_required", "message": manual}
+
     pip_pkg = _PIP_TOOLS.get(tool_name)
     if pip_pkg:
         return _pip_install(tool_name, pip_pkg)
@@ -310,8 +323,8 @@ def install_all_missing_tools() -> None:
 
     core_tools = [
         "apktool", "jadx", "uber-apk-signer", "il2cppdumper", "adb", "scrcpy",
-        "frida", "frida-tools", "objection", "fridump",
-        "androguard", "apkid", "apkleaks", "quark-engine", "mitmproxy", "medusa",
+        "frida", "frida-tools", "objection",
+        "androguard", "apkid", "apkleaks", "quark-engine", "mitmproxy",
     ]
 
     for t in core_tools:

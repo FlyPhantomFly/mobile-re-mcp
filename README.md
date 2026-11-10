@@ -219,8 +219,8 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | Tool | What it does | Needs |
 | --- | --- | --- |
 | `memory_read` / `memory_write` | session notes per package, pre-seeded with a findings template so follow-up sessions can resume | nothing |
-| `check_tools` | full inventory of your toolchain with versions, paths, install hints | nothing |
-| `install_tool` | install a missing tool from a pinned SHA-256-checked download, pip or npm | off unless `MOBILE_RE_MCP_ALLOW_INSTALL=1` |
+| `check_tools` | full inventory of your toolchain with versions, paths, install hints and the MCP tools that use each entry (`used_by`); pip CLIs are probed as executables, and the `medusa` entry refuses the SSH-cracker namesake | nothing |
+| `install_tool` | install a missing tool from a pinned SHA-256-checked download, pip or npm; `medusa`/`fridump` deliberately have no auto-recipe (name-collision / unused) | off unless `MOBILE_RE_MCP_ALLOW_INSTALL=1` |
 
 ### Knowledge packs and prompts
 

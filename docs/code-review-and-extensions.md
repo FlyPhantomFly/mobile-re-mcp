@@ -51,10 +51,12 @@ The npm server performs zero writes except in `os.tmpdir()` and never accepts a 
 
 Where it lives: `handlers/static.py:229-257` (`manifest_parse`), `:315-383` (`analyze_code`), `:423-463` (`find_crypto_usage`), `:185-219` (`apk_analyze_full`).
 
-### F-PY-2. `check_tools` reports availability the handlers can't use — **[verified live]**
+### F-PY-2. `check_tools` reports availability the handlers can't use — **[verified live]** — **Status: fixed**
 
 - `check_tools` checks apkleaks as a *Python module* (importable → `available: true`, check_tools.py:172), but `apk_scan_secrets` needs the **CLI on PATH** (`shutil.which("apkleaks")`, static.py:153). Live: `check_tools` said apkleaks ✓; `apk_scan_secrets` returned `missing_tool 'apkleaks' not found on PATH.` The inventory lies to the assistant exactly when it matters (it recommends "run check_tools first" in docs).
 - `check_tools` reports `medusa` **available** — live output was `Medusa v2.3 [http://www.foofus.net]` — that is the SSH/password **login cracker**, not the Frida script framework this tool chain expects. Name collision, false positive (check_tools.py:238).
+
+*Fix:* all CLI consumers and `check_tools` resolve through the new `mobile_re_mcp.clitools.find_cli` (PATH first, then the console-script dir next to the running interpreter — venv installs where PATH misses the venv bin); apkleaks/apkid are probed as executables; `medusa` runs a version probe and rejects any banner containing `foofus.net` with a GitHub hint for the real framework; `install_tool` no longer has a pip recipe for `medusa`/`fridump` (manual-required).
 
 ### F-PY-3. The built-in Frida script library is a façade — **[verified live]**
 
@@ -70,12 +72,12 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 `frida_run_script` (dynamic.py:265-270) and `frida_find_bytes` (dynamic.py:553-563) patch values into JS via `str.replace`. Any apostrophe or quote in a user-provided search string breaks (or re-flows) the injected script, and the pattern depends on the script author remembering an exact `var SEARCH_STRING = "";` line. A message-passing config protocol (below) removes both hazards.
 
-### F-PY-6. Dead weight in dependencies and checks — **[code]**
+### F-PY-6. Dead weight in dependencies and checks — **[code]** — **Status: partially fixed**
 
-- `quark-engine` is an optional extra **and** a check_tools entry, but no handler references it (grep: zero uses). Install cost ~200 MB for nothing.
-- `capstone` and `keystone-engine` are checked in check_tools.py:211-212 but used by nothing.
-- `fridump` is checked in check_tools.py:183 and installed by `--setup`, but `frida_memdump` deliberately does not use fridump (dynamic.py:450 comment: "does NOT require fridump").
-- `_check_binary("medusa")` — see F-PY-2.
+- `quark-engine` is an optional extra **and** a check_tools entry, but no handler references it (grep: zero uses). Install cost ~200 MB for nothing. *(resolved when E-PY-3 `quark_scan` lands)*
+- `capstone` and `keystone-engine` are checked in check_tools.py:211-212 but used by nothing. → **removed from the check list** (still installable via `install_tool` on demand)
+- `fridump` is checked in check_tools.py:183 and installed by `--setup`, but `frida_memdump` deliberately does not use fridump (dynamic.py:450 comment: "does NOT require fridump"). → **removed from the check list and the install recipes**
+- `_check_binary("medusa")` — see F-PY-2. → **disambiguated by running the binary and rejecting the foofus.net banner**
 
 ### F-PY-7. Assorted smaller items — **[code]**
 
@@ -224,6 +226,21 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - Move `DexGuard` out of the iOS `KNOWN_FRAMEWORKS`; tighten the matcher to prefix-or-exact matches only.
 - Fix `DANGEROUS_PERMISSIONS` labels (rename the section header for non-runtime entries rather than reclassifying, keeping the triage utility).
 - Optional runtime hint on ENOENT under Windows ("apktool not resolvable — needs a real .exe").
+
+---
+
+## Discovered during rebuild
+
+New findings made while fixing Part 1/2 items. They are logged here instead of fixed inline, unless they blocked the current item.
+
+| # | Finding | Where | Severity |
+| --- | --- | --- | --- |
+| D-1 | The only deployment path the servers run from is a virtualenv whose `bin/` is not on PATH: pip console scripts (`apkleaks`, and after pinning also `apkid`) resolve only via the interpreter-sibling fallback now shared by both `check_tools` and the handlers. Every future handler spawning a pip CLI must use `mobile_re_mcp.clitools.find_cli`, never bare `shutil.which`. | `clitools.py` | info (pattern to follow) |
+| D-2 | Check entries `binwalk`, `apk-mitm`, `frida-compile`, `frida-ps` are probed but no handler invokes them; they now carry `used_by: []` and are candidates for removal in a later cleanup. | `setup/check_tools.py` | low |
+| D-3 | `scripts/android-api-extractor/analyze_apk.py` (legacy helper) contains dead code paths that are unsafe if ever invoked (un-validated argv use); it is not reachable from either scaffold. Kept out of scope; candidate for deletion. | `scripts/` | low |
+| D-4 | `find_cli` initially used `Path(sys.executable).resolve()`, which follows a venv interpreter's symlink to the *base* interpreter — invisible to the venv's console scripts. Fixed in-commit with `absolute()` before shipping; noted here because the trap is easy to re-introduce. | `clitools.py` | fixed in-commit |
+
+
 
 ---
 

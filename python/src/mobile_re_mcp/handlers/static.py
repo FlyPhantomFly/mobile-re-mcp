@@ -16,6 +16,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from mobile_re_mcp.clitools import find_cli as _find_cli
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT_DEFAULT = 120
@@ -129,13 +131,14 @@ class StaticHandler:
 
     def apk_identify(self, args: dict) -> dict:
         """[TOOL] apkid — identify packers and obfuscators."""
-        if not _check_tool("apkid"):
+        apkid_cli = _find_cli("apkid")
+        if apkid_cli is None:
             return _missing("apkid")
 
         apk_path = args.get("apk_path", "")
         try:
             proc = subprocess.run(
-                ["apkid", "--json", apk_path],
+                [apkid_cli, "--json", apk_path],
                 capture_output=True,
                 text=True,
                 timeout=_TIMEOUT_DEFAULT,
@@ -160,7 +163,8 @@ class StaticHandler:
 
     def apk_scan_secrets(self, args: dict) -> dict:
         """[TOOL] apkleaks — scan for hardcoded secrets."""
-        if not _check_tool("apkleaks"):
+        apkleaks_cli = _find_cli("apkleaks")
+        if apkleaks_cli is None:
             return _missing("apkleaks")
 
         apk_path = args.get("apk_path", "")
@@ -168,7 +172,7 @@ class StaticHandler:
 
         try:
             proc = subprocess.run(
-                ["apkleaks", "-f", apk_path, "-o", out_json, "--json"],
+                [apkleaks_cli, "-f", apk_path, "-o", out_json, "--json"],
                 capture_output=True,
                 text=True,
                 timeout=_TIMEOUT_LONG,
