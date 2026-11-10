@@ -54,6 +54,10 @@ class DeviceHandler:
     start / stop / read without global state.
     """
 
+    # Single-worker executor: concurrent device calls queue rather than
+    # racing on the logcat reader (see server._run_tool).
+    _SERIALIZE = True
+
     def __init__(self) -> None:
         self._logcat_proc: Optional[subprocess.Popen] = None
         self._logcat_queue: queue.Queue[str] = queue.Queue(maxsize=50_000)

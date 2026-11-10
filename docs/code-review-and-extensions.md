@@ -151,10 +151,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Proposal:* `quark_scan(apk_path, severity_min?, max_results?)` — run quark's rule engine over an APK and return scored behaviour matches (e.g. "load dex from external source", "send SMS"). This turns `apk_analyze_full` into a genuine triage pipeline: apkid (packer) + apkleaks (leaks) + manifest (exposure) + quark (behaviour).
 - *Effort:* S–M (quark has a stable Python API; handler pattern already exists in `static.py`).
 
-**E-PY-4. Make handlers non-blocking (the fix for F-PY-4)**
-- *Current:* every handler runs synchronously inside the asyncio `call_tool`; a 5-minute jadx run freezes the server.
-- *Proposal:* in `server.py` wrap the dispatch in `await asyncio.to_thread(handler, args)` for sync handlers (keep stateful handlers on one worker via a small `ThreadPoolExecutor(max_workers=1)` owned by the handler classes, which preserves current serial semantics while freeing the loop); replace `time.sleep(1)` in `mitm_start` with an awaited sleep. No behavioural change for single-user flows; unblocks SSE multi-client and responsiveness.
-- *Effort:* S.
+**E-PY-4. Make handlers non-blocking (the fix for F-PY-4) — *Current: landed*** — **Status: fixed**
+- *Was:* every handler ran synchronously inside the asyncio `call_tool`; a 5-minute jadx run froze the server.
+- *Done:* `call_tool` is now a thin wrapper over module-level `async def _run_tool(name, args, dispatch, serial_pools)` (server.py): guard refusals → `isError` results, async handlers awaited, sync handlers run on worker threads. Stateless classes go through `asyncio.to_thread` (concurrent calls overlap); the three stateful classes that own process/session state — `DynamicHandler` (Frida session/queue), `NetworkHandler` (mitm proc), `DeviceHandler` (logcat reader) — flag themselves with `_SERIALIZE` and execute on a dedicated max_workers=1 pool, preserving the previous serial ordering for their shared state. Tests: `tests/test_concurrency.py` proves a slow sync handler no longer stalls the loop and that two calls to a stateful class queue instead of overlapping. Live: server boots, `list_tools` + static + setup dispatch all healthy through the shared tree.
 
 **E-PY-5. Honesty pass on `check_tools` (the fix for F-PY-2)**
 - *Current:* inventory checks Python modules where the tools need CLIs, and collides with an unrelated binary named `medusa`.

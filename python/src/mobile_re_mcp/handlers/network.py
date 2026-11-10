@@ -92,6 +92,10 @@ class NetworkHandler:
     across MCP tool calls within the same server session.
     """
 
+    # Single-worker executor: mitm start/stop/read must not overlap on
+    # self._mitm_proc (see server._run_tool).
+    _SERIALIZE = True
+
     def __init__(self) -> None:
         self._mitm_proc: Optional[subprocess.Popen] = None
         self._mitm_capture_path: Optional[str] = None

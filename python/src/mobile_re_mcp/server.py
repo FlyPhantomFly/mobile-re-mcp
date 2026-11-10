@@ -3,13 +3,21 @@ server.py — MCP server factory: registers all tools, resources, and prompts.
 
 All handler implementations live in mobile_re_mcp/handlers/*.
 Tool logic is intentionally thin here; this file only wires registration.
+
+Dispatch is non-blocking (F-PY-4): sync handlers run on worker threads via
+module-level _run_tool; handler classes that hold process/session state
+flag themselves with _SERIALIZE and get a dedicated single-worker pool.
 """
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 from mcp.server import Server
 from mcp.types import (
@@ -891,6 +899,71 @@ PROMPT_DEFS = [
 # ---------------------------------------------------------------------------
 
 
+async def _run_tool(
+    name: str,
+    arguments: dict,
+    dispatch: dict[str, Callable[..., object]],
+    serial_pools: dict[int, ThreadPoolExecutor],
+) -> CallToolResult:
+    """Resolve and execute one tool call without blocking the event loop.
+
+    * guard refusals → isError CallToolResult (never raised)
+    * async handlers are awaited directly
+    * sync handlers of stateless classes run on the default executor
+      (``asyncio.to_thread``) — concurrent calls overlap freely
+    * sync handlers of classes flagged ``_SERIALIZE`` (Dynamic/Network/
+      Device: they own a Frida session, mitm process or logcat reader) run
+      on a per-instance single-worker pool, so a second call queues
+      instead of racing the first on shared state — same observable
+      ordering as the old synchronous dispatch, minus the block
+    """
+    try:
+        args = guard.validate(name, arguments)
+    except guard.GuardError as exc:
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(
+                {"status": "error", "tool": name, "error": f"refused: {exc}"}, indent=2))],
+            isError=True,
+        )
+
+    handler = dispatch.get(name)
+    if handler is None:
+        result = {
+            "status": "error",
+            "tool": name,
+            "error": f"Unknown tool: {name}",
+        }
+    else:
+        try:
+            if inspect.iscoroutinefunction(handler):
+                result = await handler(args)
+            else:
+                bound_self = getattr(handler, "__self__", None)
+                if getattr(bound_self, "_SERIALIZE", False):
+                    pool = serial_pools.get(id(bound_self))
+                    if pool is None:
+                        pool = ThreadPoolExecutor(
+                            max_workers=1, thread_name_prefix="mobile-re-serial"
+                        )
+                        serial_pools[id(bound_self)] = pool
+                    result = await asyncio.get_running_loop().run_in_executor(
+                        pool, handler, args
+                    )
+                else:
+                    result = await asyncio.to_thread(handler, args)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Tool %s raised an exception", name)
+            result = {
+                "status": "error",
+                "tool": name,
+                "error": str(exc),
+            }
+
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(result, indent=2))]
+    )
+
+
 def create_server() -> Server:
     """Build and return a configured MCP Server instance."""
 
@@ -983,6 +1056,9 @@ def create_server() -> Server:
         "check_tools": lambda _args: check_all_tools(),
         "install_tool": lambda args: _install_tool(args.get("tool_name", "")),
     }
+    # One single-worker executor per stateful handler instance (F-PY-4):
+    # dynamic (Frida session), network (mitm process), device (logcat).
+    _serial_pools: dict[int, ThreadPoolExecutor] = {}
 
     # ── List tools ─────────────────────────────────────────────────────────
 
@@ -1003,41 +1079,7 @@ def create_server() -> Server:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> CallToolResult:
-        try:
-            args = guard.validate(name, arguments)
-        except guard.GuardError as exc:
-            return CallToolResult(
-                content=[TextContent(type="text", text=json.dumps(
-                    {"status": "error", "tool": name, "error": f"refused: {exc}"}, indent=2))],
-                isError=True,
-            )
-
-        handler = _dispatch.get(name)
-        if handler is None:
-            result = {
-                "status": "error",
-                "tool": name,
-                "error": f"Unknown tool: {name}",
-            }
-        else:
-            try:
-                import inspect
-
-                if inspect.iscoroutinefunction(handler):
-                    result = await handler(args)
-                else:
-                    result = handler(args)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Tool %s raised an exception", name)
-                result = {
-                    "status": "error",
-                    "tool": name,
-                    "error": str(exc),
-                }
-
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(result, indent=2))]
-        )
+        return await _run_tool(name, arguments, _dispatch, _serial_pools)
 
     # ── List resources ─────────────────────────────────────────────────────
 

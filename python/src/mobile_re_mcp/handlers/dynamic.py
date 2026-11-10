@@ -58,6 +58,11 @@ class DynamicHandler:
     frida_session, frida_script, and output_queue are instance-level.
     """
 
+    # Runs via a dedicated single-worker executor instead of the default
+    # thread pool: two concurrent calls must queue rather than race on
+    # _frida_session/_frida_script/_output_queue (see server._run_tool).
+    _SERIALIZE = True
+
     def __init__(self) -> None:
         self._frida_device: Any = None
         self._frida_session: Any = None
