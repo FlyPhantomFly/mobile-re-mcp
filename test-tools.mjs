@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 /**
- * MCP tool tester — her tool'u sırayla çağırır ve sonucu yazdırır.
- * MCP Inspector'ın yaptığının aynısını programmatik olarak yapar.
+ * Interactive smoke runner — calls every file-reading tool against
+ * example.apk / example.ipa in the repo root.
+ *
+ * The committed regression suite is `npm test` (node --test, hermetic,
+ * no fixtures needed). This script is the human-readable companion:
+ * without the fixture files it prints the full tool inventory and exits
+ * cleanly; with them it runs every tool that has a matching fixture.
  */
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 
@@ -14,7 +20,6 @@ const APK = path.join(__dirname, "example.apk");
 const IPA = path.join(__dirname, "example.ipa");
 
 const SEP = "═".repeat(70);
-const SEP2 = "─".repeat(70);
 
 function header(title) {
   console.log(`\n${SEP}`);
@@ -23,32 +28,47 @@ function header(title) {
 }
 
 function result(text) {
-  // Print first 80 lines max to keep output readable
-  const lines = text.split("\n");
-  const preview = lines.slice(0, 80).join("\n");
-  console.log(preview);
-  if (lines.length > 80) {
-    console.log(`\n  … [${lines.length - 80} more lines truncated]`);
-  }
+  const lines = String(text).split("\n");
+  console.log(lines.slice(0, 60).join("\n"));
+  if (lines.length > 60) console.log(`\n  … [${lines.length - 60} more lines truncated]`);
 }
 
+// Which fixture each tool needs. Tools not listed here (e.g. apk_diff,
+// which needs TWO fixtures) run when their fixture(s) exist.
+const TOOL_FIXTURES = {
+  android_api_extractor: { apk_path: APK },
+  apk_manifest_analyzer: { apk_path: APK },
+  apk_permissions_checker: { apk_path: APK },
+  android_google_services: { apk_path: APK },
+  android_secrets_scanner: { apk_path: APK },
+  android_native_libraries: { apk_path: APK },
+  ios_manifest_analyzer: { ipa_path: IPA },
+  ios_permissions_checker: { ipa_path: IPA },
+  ios_entitlements_checker: { ipa_path: IPA },
+  ios_binary_strings: { ipa_path: IPA },
+  ios_frameworks_detector: { ipa_path: IPA },
+  ios_google_services: { ipa_path: IPA },
+  ios_secrets_scanner: { ipa_path: IPA },
+};
+
+const EXTRA_CALLS = [
+  ["android_api_extractor (postman)", "android_api_extractor",
+   { apk_path: APK, output_format: "postman" }],
+  ["ios_binary_strings (filter: url)", "ios_binary_strings",
+   { ipa_path: IPA, filter: "url", min_length: 8 }],
+];
+
 async function main() {
-  console.log("Connecting to mobile-re-mcp server…");
+  header("mobile-re-mcp smoke");
+  console.log("Connecting to the npm server…");
 
-  const transport = new StdioClientTransport({
-    command: "node",
-    args: [SERVER],
-  });
-
-  const client = new Client({ name: "test-client", version: "1.0.0" });
+  const transport = new StdioClientTransport({ command: "node", args: [SERVER] });
+  const client = new Client({ name: "smoke-client", version: "1.0.0" });
   await client.connect(transport);
 
-  // List all tools
   const { tools } = await client.listTools();
-  console.log(`\nServer started. ${tools.length} tools registered:\n`);
-  for (const t of tools) {
-    console.log(`  • ${t.name}`);
-  }
+  console.log(`\nServer started. ${tools.length} tools registered:`);
+  for (const t of tools) console.log(`  • ${t.name}`);
 
   const call = async (name, args) => {
     try {
@@ -59,43 +79,40 @@ async function main() {
     }
   };
 
-  // ─── Android Tools ───────────────────────────────────────────────
+  const missingFixtures = [
+    !existsSync(APK) && APK,
+    !existsSync(IPA) && IPA,
+  ].filter(Boolean);
 
-  header("1/8  android_api_extractor  (format: txt)");
-  result(await call("android_api_extractor", { apk_path: APK, output_format: "txt" }));
+  if (missingFixtures.length > 0) {
+    console.log(
+      `\nSkipping per-tool calls — fixture file(s) not present:\n` +
+      missingFixtures.map((f) => `  ${f}`).join("\n") +
+      `\n\nDrop an example.apk / example.ipa in the repo root to smoke-run ` +
+      `every tool, or use the hermetic suite: npm test`
+    );
+    await client.close();
+    return;
+  }
 
-  header("2/8  android_api_extractor  (format: postman)");
-  result(await call("android_api_extractor", { apk_path: APK, output_format: "postman" }));
-
-  header("3/8  apk_manifest_analyzer");
-  result(await call("apk_manifest_analyzer", { apk_path: APK }));
-
-  header("4/8  apk_permissions_checker");
-  result(await call("apk_permissions_checker", { apk_path: APK }));
-
-  // ─── iOS Tools ───────────────────────────────────────────────────
-
-  header("5/8  ios_manifest_analyzer");
-  result(await call("ios_manifest_analyzer", { ipa_path: IPA }));
-
-  header("6/8  ios_permissions_checker");
-  result(await call("ios_permissions_checker", { ipa_path: IPA }));
-
-  header("7/8  ios_entitlements_checker");
-  result(await call("ios_entitlements_checker", { ipa_path: IPA }));
-
-  header("8/8  ios_frameworks_detector");
-  result(await call("ios_frameworks_detector", { ipa_path: IPA }));
-
-  // binary_strings ayrı — büyük binary, filter: url
-  header("BONUS  ios_binary_strings  (filter: url)");
-  result(await call("ios_binary_strings", { ipa_path: IPA, filter: "url", min_length: 8 }));
-
-  header("BONUS  ios_binary_strings  (filter: key)");
-  result(await call("ios_binary_strings", { ipa_path: IPA, filter: "key", min_length: 10 }));
+  let ran = 0;
+  for (const t of tools) {
+    const args = TOOL_FIXTURES[t.name];
+    if (!args) {
+      console.log(`\n[skip] ${t.name} — no fixture recipe in this script`);
+      continue;
+    }
+    header(t.name);
+    result(await call(t.name, args));
+    ran++;
+  }
+  for (const [label, name, args] of EXTRA_CALLS) {
+    header(label);
+    result(await call(name, args));
+  }
 
   console.log(`\n${SEP}`);
-  console.log("  Tüm tool'lar test edildi.");
+  console.log(`  Smoke done: ${ran}/${tools.length} tools called against real fixtures.`);
   console.log(SEP);
 
   await client.close();

@@ -163,10 +163,7 @@ function buildPostmanOutput(annotations: Array<[string, string]>): string {
         url: {
           raw: "{{base_url}}" + endpoint,
           host: ["{{base_url}}"],
-          path: endpoint
-            .split("/")
-            .filter(Boolean)
-            .map((p: string) => (p.startsWith("{") ? p : p)),
+          path: endpoint.split("/").filter(Boolean),
         },
       },
     };

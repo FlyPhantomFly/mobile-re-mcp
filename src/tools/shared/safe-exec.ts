@@ -25,14 +25,28 @@ export interface RunOptions {
  * special meaning. Returns stdout as a string; throws on non-zero exit / timeout.
  */
 export function run(command: string, args: string[], options: RunOptions = {}): string {
-  return execFileSync(command, args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: false,
-    windowsHide: true,
-    encoding: "utf-8",
-    maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
-    timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-  });
+  try {
+    return execFileSync(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+      windowsHide: true,
+      encoding: "utf-8",
+      maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
+      timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    });
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      // execFileSync never uses a shell, so on Windows a .bat/.cmd needs
+      // the full real executable — give a hint instead of a bare ENOENT.
+      throw new Error(
+        `${command} not found on PATH${process.platform === "win32"
+          ? " (Windows: the tool must resolve to a real .exe, not a .bat/.cmd wrapper)"
+          : ""}`
+      );
+    }
+    throw e;
+  }
 }
 
 export type PathCheck = { ok: true; path: string } | { ok: false; error: string };

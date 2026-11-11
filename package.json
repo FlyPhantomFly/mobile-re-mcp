@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc && node dist/index.js",
+    "test": "npm run build && node --test test/*.test.mjs",
     "test:tools": "node test-tools.mjs",
     "prepare": "npm run build"
   },

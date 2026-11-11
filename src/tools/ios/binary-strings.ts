@@ -26,8 +26,8 @@ export const iosBinaryStrings = {
       .int()
       .min(4)
       .max(100)
-      .default(6)
-      .describe("Minimum string length to include (default 6)"),
+      .default(8)
+      .describe("Minimum string length to include (default 8 — shared with the secret scanners)"),
   },
 
   handler: async (args: {
@@ -40,7 +40,7 @@ export const iosBinaryStrings = {
     const ipaPath = ipa.path;
 
     const filter = args.filter ?? "all";
-    const minLen = Number.isInteger(args.min_length) ? (args.min_length as number) : 6;
+    const minLen = Number.isInteger(args.min_length) ? (args.min_length as number) : 8;
     if (minLen < 4 || minLen > 100) return errorResult("min_length must be an integer between 4 and 100.");
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ipa-strings-"));

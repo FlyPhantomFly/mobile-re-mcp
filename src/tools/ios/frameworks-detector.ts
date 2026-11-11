@@ -72,7 +72,8 @@ const KNOWN_FRAMEWORKS: Record<string, FrameworkInfo> = {
 
   // Security/Obfuscation
   iXGuard: { category: "Obfuscation", description: "iXGuard code obfuscation", risk: "May indicate hardened binary against reverse engineering" },
-  DexGuard: { category: "Obfuscation", description: "DexGuard obfuscation" },
+  // NB: DexGuard is an *Android* DEX obfuscator — it belongs to
+  // android_native_libraries' world, not to an iOS framework table.
 
   // Google / Firebase (extended)
   GoogleAppMeasurement: { category: "Analytics", description: "Google App Measurement (Firebase Analytics core)", risk: "Sends usage data to Google" },
@@ -226,11 +227,11 @@ function findFrameworkInfo(name: string): FrameworkInfo | null {
   // Exact match
   if (KNOWN_FRAMEWORKS[name]) return KNOWN_FRAMEWORKS[name];
 
-  // Prefix match (e.g. "FirebaseCore" → Firebase)
+  // Prefix match only (e.g. "FirebaseCoreDiagnostics" → FirebaseCore).
+  // Substring matching mislabeled unrelated frameworks whose names merely
+  // contained a known key ("Segment", "Branch", "Realm").
   for (const [key, info] of Object.entries(KNOWN_FRAMEWORKS)) {
-    if (name.startsWith(key) || name.toLowerCase().includes(key.toLowerCase())) {
-      return info;
-    }
+    if (name.startsWith(key)) return info;
   }
 
   return null;
