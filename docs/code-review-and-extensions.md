@@ -174,10 +174,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Was:* nothing introspects the handler's session state; the only way to know "am I attached?" is to run something that errors.
 - *Done:* `frida_status()` — a no-op read returning frida's version, every connected device (id/name/type), the USB device, whether frida-server answers (a single `get_frontmost_application()` RPC, with `frontmost_application` when one is up), and the handler's own session state (`attached_package`, `alive`, `script_loaded`, `queued_messages`). Every section is best-effort: a dead server or an old session object degrades that field, not the whole call. Tests: `tests/test_frida_status.py` (6 hermetic cases with a fake frida module: missing engine, detached state, live session, dead server, session without `is_detached`, no-USB short-circuit). Live: device `f982678d` → devices list with the USB entry, `frida_server_responsive: true`.
 
-**E-PY-8. New tool: `adb_ui_dump`**
-- *Current:* the server can screenshot the UI (`scrcpy_screenshot`), but the assistant has no structured view of it — driving test flows ("tap login") is guesswork from pixels.
-- *Proposal:* `adb_ui_dump()` — `adb shell uiautomator dump`, pull the XML, parse clickable nodes and return text/resource-id/bounds/clickable as JSON. It is the read-only complement to `scrcpy_screenshot`, and it gives the assistant a stable target list for scripted UI flows on rooted *and* unrooted devices.
-- *Effort:* S. (Device-side write is limited to the dump file under `/sdcard`; document that.)
+**E-PY-8. New tool: `adb_ui_dump` — *Current: landed*** — **Status: done**
+- *Was:* the server can screenshot the UI (`scrcpy_screenshot`), but the assistant has no structured view of it — driving test flows ("tap login") is guesswork from pixels.
+- *Done:* `adb_ui_dump(serial?)` in `handlers/device.py` — `adb exec-out uiautomator dump /dev/tty` with an automatic fallback to the two-step dump-then-cat, parsed with ElementTree into a flat element list (class, text, content-desc, resource-id, bounds, clickable/scrollable/checked/enabled — plain containers filtered out) plus a human-readable report capped at 80 lines. Malformed XML and devices that produce no dump are honest errors. Tests: `tests/test_adb_ui_dump.py` (5 cases with a fake adb on PATH: element parsing, two-step fallback, total failure, malformed XML, missing adb). Live: device `f982678d` → the tool faithfully reported the window actually on top (an overlay dialog app), including its clickable bounds and texts.
 
 **E-PY-9. Housekeeping**
 - Move `frida_memdump`'s default output under `data_dir()/dumps` (currently `~/tools/dumps`).

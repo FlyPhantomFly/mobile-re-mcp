@@ -3,7 +3,7 @@ handlers/device.py — ADB device control + UI mirroring handlers.
 
 Tools: adb_devices, adb_shell, adb_install, adb_pull, adb_push,
        adb_logcat_start, adb_logcat_read, adb_logcat_stop,
-       hermes_decode, scrcpy_start, scrcpy_screenshot
+       adb_ui_dump, hermes_decode, scrcpy_start, scrcpy_screenshot
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import threading
 import zipfile
 from pathlib import Path
 from typing import Optional
+from xml.etree import ElementTree
 
 logger = logging.getLogger(__name__)
 
@@ -534,3 +535,126 @@ class DeviceHandler:
             return {"status": "error", "tool": "scrcpy_screenshot", "error": "adb screencap timed out"}
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "tool": "scrcpy_screenshot", "error": str(exc)}
+
+    # ── adb_ui_dump (E-PY-8) ───────────────────────────────────────────────
+
+    def adb_ui_dump(self, args: dict) -> dict:
+        """Dump the current UI as a structured element list (read-only).
+
+        Uses `adb exec-out uiautomator dump /dev/tty` (XML straight to
+        stdout); when the device's uiautomator refuses /dev/tty, falls
+        back to the two-step dump-to-file + cat. Device-side writes are
+        limited to the dump file under /sdcard in the fallback path.
+        """
+        if not _check_adb():
+            return _missing_adb()
+        serial = args.get("serial")
+        try:
+            proc = _adb("exec-out", "uiautomator", "dump", "/dev/tty", serial=serial)
+            xml_text = proc.stdout or ""
+            if not xml_text.lstrip().startswith("<?xml"):
+                # Older/strict devices: dump to the default file and cat it.
+                first = _adb("shell", "uiautomator", "dump", serial=serial)
+                second = _adb("shell", "cat", "/sdcard/window_dump.xml", serial=serial)
+                xml_text = second.stdout or ""
+                if not xml_text.lstrip().startswith("<?xml"):
+                    return {
+                        "status": "error",
+                        "tool": "adb_ui_dump",
+                        "error": (
+                            "uiautomator dump produced no XML"
+                            + (f" (adb: {first.stderr.strip() or first.stdout.strip()})"
+                               if (first.stderr or first.stdout).strip() else "")
+                        ),
+                    }
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "tool": "adb_ui_dump", "error": "Timeout after 120s"}
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "tool": "adb_ui_dump", "error": str(exc)}
+
+        try:
+            root = ElementTree.fromstring(xml_text)
+        except ElementTree.ParseError as exc:
+            return {
+                "status": "error",
+                "tool": "adb_ui_dump",
+                "error": f"UI XML parse error: {exc}",
+                "raw": xml_text[:2000],
+            }
+
+        hierarchy = root if root.tag == "hierarchy" else (root.find("hierarchy") or root)
+        package = None
+        rotation = hierarchy.get("rotation")
+
+        elements: list[dict] = []
+
+        def walk(node) -> None:
+            nonlocal package
+            if node.tag != "node":
+                return
+            attrs = node.attrib
+            pkg = attrs.get("package")
+            if pkg and package is None:
+                package = pkg
+            interesting = (
+                attrs.get("text")
+                or attrs.get("content-desc")
+                or attrs.get("clickable") == "true"
+                or attrs.get("scrollable") == "true"
+                or attrs.get("checked") == "true"
+            )
+            if interesting:
+                cls = (attrs.get("class") or "").split(".")[-1]
+                element = {
+                    "class": cls,
+                    "bounds": attrs.get("bounds", ""),
+                }
+                for src, dst in (
+                    ("text", "text"), ("content-desc", "desc"), ("resource-id", "id"),
+                    ("clickable", "clickable"), ("scrollable", "scrollable"),
+                    ("checked", "checked"), ("enabled", "enabled"),
+                ):
+                    value = attrs.get(src)
+                    if value not in (None, "", "false"):
+                        element[dst] = value
+                elements.append(element)
+            for child in node:
+                walk(child)
+
+        for child in hierarchy:
+            walk(child)
+
+        lines = ["=== Android UI Dump ==="]
+        if package:
+            lines.append(f"package: {package}" + (f" (rotation {rotation})" if rotation else ""))
+        lines.append(f"elements: {len(elements)}")
+        shown = elements[:80]
+        if shown:
+            lines.append("")
+            lines.append("--- Elements (text / desc / clickable) ---")
+            for el in shown:
+                what = f"{el.get('class', 'Node')}  "
+                label = el.get("text") or el.get("desc") or ""
+                if label:
+                    what += f'"{label}"  '
+                if el.get("id"):
+                    what += f"id={el['id']}  "
+                what += f"bounds={el.get('bounds', '')}"
+                flags = [k for k in ("clickable", "scrollable", "checked") if el.get(k) == "true"]
+                if flags:
+                    what += f"  [{','.join(flags)}]"
+                lines.append(f"  {what}")
+            if len(elements) > len(shown):
+                lines.append(f"  … +{len(elements) - len(shown)} more")
+
+        return {
+            "status": "ok",
+            "tool": "adb_ui_dump",
+            "output": {
+                "package": package,
+                "rotation": rotation,
+                "element_count": len(elements),
+                "elements": elements,
+                "report": "\n".join(lines),
+            },
+        }

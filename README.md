@@ -135,6 +135,7 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | `frida_inject` | inject another script into the live session | active session |
 | `frida_read_output` | drain what the hooking session printed | active session |
 | `frida_detach` | detach cleanly | active session |
+| `frida_status` | frida version, devices, server responsiveness, current session state — the "am I attached?" no-op read | frida |
 | `objection_run` | run any objection command against a package | objection |
 
 **Frida script library (3)**
@@ -159,7 +160,7 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | `frida_memdump` | dump every rw- memory region of the target to disk files | active session |
 | `frida_find_bytes` | search process memory for a UTF-8 string or hex pattern, with addresses | active session |
 
-**Device control (11)**
+**Device control (12)**
 
 | Tool | What it does | Needs |
 | --- | --- | --- |
@@ -168,6 +169,7 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | `adb_install` | install an APK (`install -r -t`) | adb |
 | `adb_pull` / `adb_push` | copy files between host and device | adb |
 | `adb_logcat_start` / `read` / `stop` | stream and buffer up to 50k log lines in the background | adb |
+| `adb_ui_dump` | the current UI as structured elements (class, text, resource-id, bounds, clickable) | adb |
 | `hermes_decode` | extract and decode the React Native Hermes bundle to readable JS | hermes-dec or hbctool |
 | `scrcpy_start` | mirror the device screen, optionally recording to MP4 | scrcpy |
 | `scrcpy_screenshot` | capture a PNG of the current screen | adb only |

@@ -773,6 +773,20 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "adb_ui_dump",
+        "description": (
+            "Dump the current device UI as structured elements "
+            "(class, text, resource-id, bounds, clickable) via "
+            "uiautomator — the read-only complement to scrcpy_screenshot."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "serial": {"type": "string", "description": "Optional device serial"},
+            },
+        },
+    },
+    {
         "name": "scrcpy_screenshot",
         "description": "Capture a UI screenshot from the device (returns local PNG path).",
         "inputSchema": {
@@ -1081,6 +1095,7 @@ def create_server() -> Server:
         "adb_logcat_stop": device.adb_logcat_stop,
         "hermes_decode": device.hermes_decode,
         "scrcpy_start": device.scrcpy_start,
+        "adb_ui_dump": device.adb_ui_dump,
         "scrcpy_screenshot": device.scrcpy_screenshot,
         # network
         "mitm_start": network.mitm_start,

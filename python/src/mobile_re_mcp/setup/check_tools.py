@@ -284,7 +284,8 @@ def check_all_tools() -> dict:
         _check_binary("adb", "version", hint="Run mobile-re-mcp-py --setup, or install adb yourself",
                       used_by=["adb_devices", "adb_shell", "adb_install", "adb_pull", "adb_push",
                                "adb_logcat_start", "adb_logcat_read", "adb_logcat_stop",
-                               "scrcpy_screenshot", "frida_server_push", "frida_spawn_hluda"]),
+                               "adb_ui_dump", "scrcpy_screenshot", "frida_server_push",
+                               "frida_spawn_hluda"]),
 
         # ── Network ────────────────────────────────────────────────────────
         _check_binary("mitmdump", "--version", hint="Run mobile-re-mcp-py --setup, or install mitmproxy yourself",
