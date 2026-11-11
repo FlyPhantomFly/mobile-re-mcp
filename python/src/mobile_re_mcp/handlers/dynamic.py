@@ -34,7 +34,7 @@ from mobile_re_mcp.frida_scripts.index import (
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 120
-from mobile_re_mcp.paths import tools_dir
+from mobile_re_mcp.paths import data_dir, tools_dir
 
 _TOOLS_DIR = tools_dir()
 
@@ -560,8 +560,10 @@ class DynamicHandler:
                     "error": "No active Frida session. Call frida_attach first."}
 
         package = args.get("package", self._attached_package or "unknown")
-        output_dir = Path(args.get("output_dir",
-                                    str(_TOOLS_DIR / "dumps" / package)))
+        # E-PY-9: dumps are *output*, not downloaded tooling — they live
+        # under data_dir()/dumps, not the tools-download dir.
+        default_dir = data_dir() / "dumps" / package
+        output_dir = Path(args.get("output_dir", str(default_dir)))
         output_dir.mkdir(parents=True, exist_ok=True)
 
         dump_script = r"""

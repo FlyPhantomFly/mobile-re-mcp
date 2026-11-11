@@ -34,6 +34,10 @@ const DANGEROUS_PERMISSIONS = new Set([
   "USE_FINGERPRINT",
   "BODY_SENSORS",
   "ACTIVITY_RECOGNITION",
+  // NB: entries below this line are not runtime-"dangerous" in Google's
+  // taxonomy (install-time normal or signature permissions). They stay in
+  // this set because the list is a *triage* ranking — these grants matter
+  // for an assessment even though the platform installs them silently.
   "ACCESS_WIFI_STATE",
   "CHANGE_WIFI_STATE",
   "BLUETOOTH_CONNECT",
@@ -133,7 +137,7 @@ function buildReport(permissions: string[]): string {
   lines.push(`=== APK Permissions Analysis ===`);
   lines.push(`Total permissions: ${permissions.length}\n`);
 
-  lines.push(`--- Dangerous Permissions (${dangerous.length}) ---`);
+  lines.push(`--- Sensitive Permissions (${dangerous.length}) — runtime-dangerous plus install-time/signature grants worth triage ---`);
   if (dangerous.length === 0) {
     lines.push(`  ✓ None`);
   } else {

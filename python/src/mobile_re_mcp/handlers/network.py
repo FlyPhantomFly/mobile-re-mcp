@@ -322,7 +322,7 @@ class NetworkHandler:
             "    for f in mio.FlowReader(fh).stream():\n"
             "        if not isinstance(f, http.HTTPFlow) or not f.response: continue\n"
             "        entries.append({\n"
-            "            'startedDateTime': datetime.datetime.utcnow().isoformat() + 'Z',\n"
+            "            'startedDateTime': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),\n"
             "            'request': {\n"
             "                'method': f.request.method,\n"
             "                'url': f.request.pretty_url,\n"

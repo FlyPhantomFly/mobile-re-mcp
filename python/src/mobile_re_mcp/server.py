@@ -668,7 +668,13 @@ TOOL_SCHEMAS: list[dict] = [
     },
     {
         "name": "adb_shell",
-        "description": "Run a shell command on the connected device via ADB.",
+        "description": (
+            "Run a shell command on the connected device via ADB. The "
+            "command is split on the host into a safe argv (never a shell), "
+            "so space-containing single arguments cannot be expressed and "
+            "device-side operators (|, &&) do not shell-evaluate — use a "
+            "device-side shell wrapper (`adb_shell 'sh -c \"...\"'`) for those."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
