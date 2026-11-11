@@ -231,7 +231,7 @@ def test_find_crypto_usage_ignores_crypto_classes_themselves(monkeypatch):
 
 @pytest.fixture()
 def patched_children(monkeypatch):
-    def patch(manifest, apkid=None, secrets=None):
+    def patch(manifest, apkid=None, secrets=None, quark=None):
         monkeypatch.setattr(
             static_mod.StaticHandler, "manifest_parse",
             lambda self, args: manifest,
@@ -245,17 +245,27 @@ def patched_children(monkeypatch):
             lambda self, args: secrets
             or {"status": "ok", "output": {"findings": {"URLs": ["https://x.example"]}}},
         )
+        monkeypatch.setattr(
+            static_mod.StaticHandler, "quark_scan",
+            lambda self, args: quark
+            or {"status": "missing_tool", "tool": "quark_scan",
+                "error": "quark-engine is not installed in this Python environment.",
+                "hint": "install quark-engine"},
+        )
 
     return patch
 
 
 def test_apk_analyze_full_all_ok(patched_children):
-    patched_children(manifest={"status": "ok", "output": {"package_name": "p"}})
+    patched_children(
+        manifest={"status": "ok", "output": {"package_name": "p"}},
+        quark={"status": "ok", "output": {"matches": [], "report": "=== Quark Behaviour Scan ==="}},
+    )
     out = static_mod.StaticHandler().apk_analyze_full({"apk_path": str(FIXTURE)})
     assert out["status"] == "ok"
     o = out["output"]
     assert o["manifest"] == {"package_name": "p"}
-    assert o["tool_statuses"] == {"apkid": "ok", "apkleaks": "ok", "manifest": "ok"}
+    assert o["tool_statuses"] == {"apkid": "ok", "apkleaks": "ok", "manifest": "ok", "quark": "ok"}
     assert "errors" not in out
     assert out["output"]["framework"]
     assert out["output"]["protection_tier"]
@@ -281,10 +291,19 @@ def test_apk_analyze_full_error_when_everything_fails(patched_children):
         manifest=sentinel,
         apkid={"status": "missing_tool", "error": "no apkid"},
         secrets={"status": "missing_tool", "error": "no apkleaks"},
+        quark={"status": "missing_tool", "error": "no quark"},
     )
     out = static_mod.StaticHandler().apk_analyze_full({"apk_path": str(FIXTURE)})
     assert out["status"] == "error"
-    assert set(out["output"]["errors"]) == {"apkid", "apkleaks", "manifest"}
+    # Optional (missing_tool) stages stay out of the error map; their
+    # absence is recorded in tool_statuses only.
+    assert set(out["output"]["errors"]) == {"manifest"}
+    assert out["output"]["tool_statuses"] == {
+        "apkid": "missing_tool",
+        "apkleaks": "missing_tool",
+        "manifest": "error",
+        "quark": "missing_tool",
+    }
     assert out["output"]["protection_tier"] == "none"
 
 

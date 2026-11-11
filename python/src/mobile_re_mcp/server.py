@@ -121,6 +121,40 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "quark_scan",
+        "description": (
+            "Run quark-engine behaviour rules over an APK and return scored "
+            "behaviour matches (e.g. 'send SMS', 'load dex from external "
+            "source'). Needs the rule set downloaded once via `freshquark`."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "apk_path": {"type": "string"},
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only run rules whose crime/label contains one of these (case-insensitive).",
+                },
+                "min_score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5,
+                    "description": "Skip rules whose base score is below this (0 = no filter).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Cap on returned behaviour matches (default 10).",
+                },
+                "rules_dir": {
+                    "type": "string",
+                    "description": "Optional directory of quark rule JSONs (default: freshquark's ~/.quark-engine/quark-rules).",
+                },
+            },
+            "required": ["apk_path"],
+        },
+    },
+    {
         "name": "manifest_parse",
         "description": "Parse AndroidManifest.xml — exported components, permissions, risk flags.",
         "inputSchema": {
@@ -989,6 +1023,7 @@ def create_server() -> Server:
         "apk_identify": static.apk_identify,
         "apk_scan_secrets": static.apk_scan_secrets,
         "apk_analyze_full": static.apk_analyze_full,
+        "quark_scan": static.quark_scan,
         "manifest_parse": static.manifest_parse,
         "search_strings": static.search_strings,
         # dynamic (original)

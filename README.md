@@ -21,7 +21,7 @@ You ask in plain language, the assistant calls the right tool, and the findings 
 
 `pip install "mobile-re-mcp[all]"` gives you an MCP server, started as `mobile-re-mcp-py`, that speaks MCP over stdio (or SSE on 127.0.0.1 with a bearer token) and exposes **56 tools over one Android target at a time**:
 
-- **Static work on the APK file itself** — apktool and jadx decompilation, ripgrep searches across the decompiled folder, androguard manifest parsing and bytecode cross-references, apkid packer/obfuscator identification, apkleaks secret scanning, and an orchestrator (`apk_analyze_full`) that runs all of those in one call and scores the protection tier.
+- **Static work on the APK file itself** — apktool and jadx decompilation, ripgrep searches across the decompiled folder, androguard manifest parsing and bytecode cross-references, apkid packer/obfuscator identification, apkleaks secret scanning, quark-engine behaviour rules (`quark_scan`), and an orchestrator (`apk_analyze_full`) that runs all of those in one call and scores the protection tier.
 - **Dynamic work on a running app** — spawn or attach a process with Frida, inject JavaScript, stream script output back, hook SSL pinning, dump and search process memory, trace storage, crypto and network calls from a built-in script collection you can extend with your own scripts.
 - **Work on the phone** — list devices, run shell commands, install APKs, pull and push files, capture logcat, mirror the screen with scrcpy, and take screenshots.
 - **Network** — start and stop mitmproxy (loopback only), read captured flows as structured JSON, export them as HAR for Chrome DevTools or Burp.
@@ -45,7 +45,7 @@ It needs Python 3.11 or newer. The base install is just the MCP server. The extr
 | `[frida]` | frida, frida-tools | every `frida_*` tool, `ssl_kill_switch` |
 | `[static]` | androguard, apkid, apkleaks | `manifest_parse`, `analyze_code`, `find_crypto_usage`, `find_urls`, `apk_identify`, `apk_scan_secrets`, `apk_analyze_full` |
 | `[network]` | mitmproxy | `mitm_start/stop/read_flows/export_har` |
-| `[analysis]` | quark-engine | reserved for upcoming malware-behaviour scoring |
+| `[analysis]` | quark-engine | `quark_scan` (also a best-effort stage of `apk_analyze_full`) |
 | `[all]` | everything above | — |
 
 If Frida is already pinned in your environment, install without extras and the server will not touch it.
@@ -105,7 +105,7 @@ The server also carries seven guided prompts (`master-workflow`, `first-look`, `
 
 Every tool returns structured JSON with a `status` field (`ok`, `error`, `missing_tool`) — your assistant can chain calls. File arguments are absolute paths validated by the guard. `apk_decompile` and `apk_decompile_java` land next to the APK (`<name>_apktool/`, `<name>_jadx/`); dumps and captures go to the private data folder.
 
-**Static analysis (7)**
+**Static analysis (8)**
 
 | Tool | What it does | Needs |
 | --- | --- | --- |
@@ -113,7 +113,8 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | `apk_decompile_java` | jadx decompile to Java source | jadx |
 | `apk_identify` | apkid: packers, obfuscators, compilers, anti-tamper | apkid |
 | `apk_scan_secrets` | apkleaks: hardcoded keys and credentials, report saved as JSON | apkleaks |
-| `apk_analyze_full` | runs apkid + apkleaks + manifest in one call, adds framework guess and protection tier | apkid, apkleaks, androguard |
+| `apk_analyze_full` | runs apkid + apkleaks + manifest + quark in one call, adds framework guess and protection tier | apkid, apkleaks, androguard, (quark-engine) |
+| `quark_scan` | quark-engine behaviour rules: scored matches like "send SMS" or "load dex from external source"; `keywords` filters, the rule set comes from `freshquark` or `rules_dir` | quark-engine |
 | `manifest_parse` | androguard: package, versions, SDK levels, exported components, permissions, debuggable/allowBackup flags | androguard |
 | `search_strings` | ripgrep with JSON output over any folder (a decompile, a dump, a HAR) | ripgrep |
 

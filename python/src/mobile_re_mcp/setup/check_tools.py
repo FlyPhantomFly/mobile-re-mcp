@@ -245,7 +245,7 @@ def check_all_tools() -> dict:
                              used_by=["manifest_parse", "analyze_code", "find_crypto_usage",
                                       "find_urls", "apk_analyze_full"]),
         _check_python_module("quark-engine", "quark", hint="Run mobile-re-mcp-py --setup, or install quark-engine yourself",
-                             used_by=[]),
+                             used_by=["quark_scan", "apk_analyze_full"]),
         _check_binary("rg", "--version", hint="Manual install required (ripgrep)",
                       used_by=["search_strings"]),
 

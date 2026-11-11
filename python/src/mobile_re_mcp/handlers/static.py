@@ -2,7 +2,7 @@
 handlers/static.py — Static analysis handlers.
 
 Tools: apk_decompile, apk_decompile_java, apk_identify, apk_scan_secrets,
-       apk_analyze_full, manifest_parse, search_strings,
+       apk_analyze_full, quark_scan, manifest_parse, search_strings,
        analyze_code, find_crypto_usage, find_urls
 
 Built against androguard 4.1.x; the xref helpers tolerate the shapes that
@@ -212,11 +212,12 @@ class StaticHandler:
             ("apkid", "apkid", self.apk_identify, {"apk_path": apk_path}),
             ("apkleaks", "secrets", self.apk_scan_secrets, {"apk_path": apk_path}),
             ("manifest", "manifest", self.manifest_parse, {"apk_path": apk_path}),
+            ("quark", "quark", self.quark_scan, {"apk_path": apk_path}),
         ]
 
         tool_statuses: dict[str, str] = {}
         tool_errors: dict[str, str] = {}
-        stage_outputs: dict[str, dict] = {"apkid": {}, "secrets": {}, "manifest": {}}
+        stage_outputs: dict[str, dict] = {"apkid": {}, "secrets": {}, "manifest": {}, "quark": {}}
         manifest_result: dict = {}
 
         for label, output_key, fn, kw in stages:
@@ -227,14 +228,22 @@ class StaticHandler:
                 stage_outputs[output_key] = result.get("output", {}) or {}
                 if label == "manifest":
                     manifest_result = result
+            elif status == "missing_tool":
+                # Optional stage: recorded honestly in tool_statuses, but it
+                # is neither a failure (no error entry) nor counted against
+                # the pipeline health.
+                pass
             else:
                 tool_errors[label] = str(result.get("error", "failed"))
 
-        ok_count = sum(1 for s in tool_statuses.values() if s == "ok")
-        if ok_count == len(stages):
-            status = "ok"
-        elif ok_count == 0:
+        # Optional (missing_tool) stages are excluded from the health count:
+        # only stages that actually ran can fail.
+        ran = [s for s in tool_statuses.values() if s != "missing_tool"]
+        ok_count = sum(1 for s in ran if s == "ok")
+        if not ran or ok_count == 0:
             status = "error"
+        elif ok_count == len(ran):
+            status = "ok"
         else:
             status = "degraded"
 
@@ -246,6 +255,7 @@ class StaticHandler:
             "apkid": stage_outputs["apkid"],
             "secrets": stage_outputs["secrets"],
             "manifest": stage_outputs["manifest"],
+            "quark": stage_outputs["quark"],
             "tool_statuses": tool_statuses,
         }
         if tool_errors:
@@ -258,6 +268,58 @@ class StaticHandler:
             **({"error": "; ".join(f"{k}: {v}" for k, v in tool_errors.items())}
                if tool_errors else {}),
         }
+
+    # ── quark_scan — quark-engine behaviour rules (E-PY-3) ─────────────────
+
+    def quark_scan(self, args: dict) -> dict:
+        """[TOOL] Run quark-engine's behaviour rules over an APK.
+
+        The rule set is not bundled (quark-rules is a separate repo): it is
+        downloaded once with `freshquark` (ships with quark-engine), or the
+        caller passes rules_dir pointing at a directory of rule JSONs.
+        """
+        try:
+            import importlib.util
+
+            if importlib.util.find_spec("quark") is None:
+                raise ModuleNotFoundError("quark")
+        except ModuleNotFoundError:
+            return {
+                "status": "missing_tool",
+                "tool": "quark_scan",
+                "error": "quark-engine is not installed in this Python environment.",
+                "hint": "Run mobile-re-mcp-py --setup, or install quark-engine yourself.",
+            }
+
+        apk_path = args.get("apk_path", "")
+        if not apk_path or not Path(apk_path).exists():
+            return _not_found("quark_scan", apk_path)
+
+        rules_dir = _quark_rules_dir(args.get("rules_dir"))
+        if rules_dir is None:
+            return {
+                "status": "missing_tool",
+                "tool": "quark_scan",
+                "error": "No quark rule set found.",
+                "hint": (
+                    "Run `freshquark` once (installed with quark-engine) to download the "
+                    "quark-rules set, or pass rules_dir pointing at a directory of rule JSONs."
+                ),
+            }
+
+        keywords = [str(k).lower() for k in args.get("keywords") or []]
+        min_score = _as_int(args.get("min_score", 0)) or 0
+        max_results = max(1, _as_int(args.get("max_results", 10)) or 10)
+
+        try:
+            scan = _quark_run_scan(
+                apk_path, rules_dir, keywords, min_score, max_results
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "tool": "quark_scan", "error": str(exc)}
+
+        scan["report"] = _quark_report(apk_path, rules_dir, scan)
+        return {"status": "ok", "tool": "quark_scan", "output": scan}
 
     # ── manifest_parse ─────────────────────────────────────────────────────
 
@@ -829,6 +891,11 @@ def _top_findings(stage_outputs: dict) -> list[str]:
         count = sum(len(v) if isinstance(v, list) else 1 for v in findings_dict.values())
         if count:
             findings.append(f"{count} hardcoded secret(s)")
+    quark_out = stage_outputs.get("quark", {})
+    quark_matches = quark_out.get("matches", []) if isinstance(quark_out, dict) else []
+    if quark_matches:
+        crimes = sorted({str(m.get("crime", "unknown")) for m in quark_matches})
+        findings.append("quark: " + "; ".join(crimes[:3]))
     return findings
 
 
@@ -855,3 +922,149 @@ def _derive_protection_tier(apkid_output: dict, manifest_result: dict | None = N
     if any(k in raw for k in ["proguard", "r8", "obfuscator", "packer"]):
         return "standard"
     return "none"
+
+
+# ── quark_scan helpers ─────────────────────────────────────────────────────
+
+# freshquark clones quark-rules into ~/.quark-engine/quark-rules; older
+# layouts nested a further rules/ inside it. Both are tolerated.
+_QUARK_RULES_CANDIDATES = (
+    "~/.quark-engine/quark-rules/rules",
+    "~/.quark-engine/quark-rules/rules/rules",
+)
+
+
+def _quark_rules_dir(explicit: object) -> Path | None:
+    """Resolve the quark rule directory: explicit arg, else freshquark's location."""
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(str(explicit)).expanduser())
+    candidates.extend(Path(p).expanduser() for p in _QUARK_RULES_CANDIDATES)
+    for candidate in candidates:
+        if candidate.is_dir() and any(candidate.glob("*.json")):
+            return candidate
+    return None
+
+
+def _quark_run_scan(
+    apk_path: str,
+    rules_dir: Path,
+    keywords: list[str],
+    min_score: int,
+    max_results: int,
+) -> dict:
+    """Run quark rules over the APK. Engine-level work; quark must be importable."""
+    import warnings as _warnings
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("ignore")
+        try:
+            # quark logs to stderr via loguru; MCP stdio needs stderr quiet.
+            from loguru import logger as _quark_logger
+
+            _quark_logger.remove()
+        except Exception:  # noqa: BLE001 — loguru may be absent or already detached
+            pass
+        from quark.script import Rule, runQuarkAnalysis
+
+        rule_files = sorted(rules_dir.glob("*.json"))
+        matches: list[dict] = []
+        rule_errors: list[str] = []
+        evaluated = 0
+
+        for path in rule_files:
+            try:
+                rule = Rule(str(path))
+            except Exception as exc:  # noqa: BLE001 — skip malformed rules
+                rule_errors.append(f"{path.name}: {exc}")
+                continue
+
+            # Cheap filters before the expensive per-rule analysis.
+            label_text = " ".join(str(label) for label in rule.label).lower()
+            crime_text = str(rule.crime).lower()
+            if keywords and not any(
+                k in crime_text or k in label_text for k in keywords
+            ):
+                continue
+            if min_score and (rule.score or 0) < min_score:
+                continue
+
+            evaluated += 1
+            try:
+                analysis = runQuarkAnalysis(apk_path, rule)
+                behaviors = analysis.behaviorOccurList
+            except Exception as exc:  # noqa: BLE001 — one bad rule, not the scan
+                rule_errors.append(f"{path.name}: analysis failed: {exc}")
+                continue
+
+            if not behaviors:
+                continue
+
+            # check_item is quark's five-stage checklist; behaviours exist
+            # only once the sequence check (stage 4) passed.
+            level = sum(1 for flag in rule.check_item if flag)
+            for behavior in behaviors:
+                matches.append(
+                    {
+                        "rule": path.stem,
+                        "crime": rule.crime,
+                        "level": level,
+                        "score": rule.score,
+                        "permission": list(rule.permission),
+                        "caller": _format_ref(
+                            behavior.methodCaller.className,
+                            behavior.methodCaller.methodName,
+                        ),
+                        "first_api": _format_ref(
+                            behavior.firstAPI.className, behavior.firstAPI.methodName
+                        ),
+                        "second_api": _format_ref(
+                            behavior.secondAPI.className, behavior.secondAPI.methodName
+                        ),
+                    }
+                )
+
+        matches.sort(key=lambda m: (m["level"], m["score"]), reverse=True)
+        match_count = len(matches)
+        return {
+            "apk": apk_path,
+            "rules_dir": str(rules_dir),
+            "rules_total": len(rule_files),
+            "rules_evaluated": evaluated,
+            "keywords": keywords,
+            "min_score": min_score,
+            "match_count": match_count,
+            "matches": matches[:max_results],
+            "rule_errors": rule_errors[:5],
+            "rule_error_count": len(rule_errors),
+        }
+
+
+def _quark_report(apk_path: str, rules_dir: Path, scan: dict) -> str:
+    lines = ["=== Quark Behaviour Scan ===", f"APK: {apk_path}"]
+    lines.append(
+        f"Rules: {scan['rules_evaluated']} evaluated of {scan['rules_total']} "
+        f"from {scan['rules_dir']}"
+    )
+    if scan["keywords"]:
+        lines.append(f"Keyword filter: {', '.join(scan['keywords'])}")
+    if scan["rule_error_count"]:
+        lines.append(
+            f"Note: {scan['rule_error_count']} rule(s) failed to load or analyse "
+            f"(first: {scan['rule_errors'][0]})"
+        )
+    if not scan["matches"]:
+        lines.append("No behaviour matched the scanned rules.")
+        return "\n".join(lines)
+
+    lines.append(f"--- Matches ({scan['match_count']}) ---")
+    for m in scan["matches"]:
+        lines.append(f"[Level {m['level']}/5 | score {m['score']}] {m['crime']} ({m['rule']})")
+        if m["permission"]:
+            lines.append(f"  permission: {', '.join(m['permission'])}")
+        lines.append(f"  caller: {m['caller']}")
+        lines.append(f"  first: {m['first_api']}")
+        lines.append(f"  second: {m['second_api']}")
+    if scan["match_count"] > len(scan["matches"]):
+        lines.append(f"… +{scan['match_count'] - len(scan['matches'])} more (raise max_results)")
+    return "\n".join(lines)

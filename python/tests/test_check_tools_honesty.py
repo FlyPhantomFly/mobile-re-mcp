@@ -102,6 +102,10 @@ def test_check_tools_marks_module_only_pip_tool_missing(tmp_path, monkeypatch):
     fake_python.parent.mkdir(exist_ok=True)
     fake_python.write_text("")
     monkeypatch.setattr(sys, "executable", str(fake_python))
+    # find_cli's third strategy consults the runtime prefix's bin dir; in a
+    # venv that really ships apkleaks (e.g. a [static] extra) it must be
+    # pointed at an empty place for the "missing" assertion to hold.
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "fake-prefix"))
     tools = ct.check_all_tools()["tools"]
     assert tools["apkleaks"]["available"] is False
     assert tools["apkleaks"]["used_by"] == ["apk_scan_secrets", "apk_analyze_full"]

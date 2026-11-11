@@ -74,7 +74,7 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 ### F-PY-6. Dead weight in dependencies and checks — **[code]** — **Status: partially fixed**
 
-- `quark-engine` is an optional extra **and** a check_tools entry, but no handler references it (grep: zero uses). Install cost ~200 MB for nothing. *(resolved when E-PY-3 `quark_scan` lands)*
+- `quark-engine` is an optional extra **and** a check_tools entry, but no handler references it (grep: zero uses). Install cost ~200 MB for nothing. *(resolved by E-PY-3 `quark_scan`)*
 - `capstone` and `keystone-engine` are checked in check_tools.py:211-212 but used by nothing. → **removed from the check list** (still installable via `install_tool` on demand)
 - `fridump` is checked in check_tools.py:183 and installed by `--setup`, but `frida_memdump` deliberately does not use fridump (dynamic.py:450 comment: "does NOT require fridump"). → **removed from the check list and the install recipes**
 - `_check_binary("medusa")` — see F-PY-2. → **disambiguated by running the binary and rejecting the foofus.net banner**
@@ -152,10 +152,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Effort:* M.
 - *Verify with:* the live smoke tests already used here (same APK expectation set).
 
-**E-PY-3. New tool: `quark_scan` (uses the dependency that is already being asked for)**
-- *Current:* quark-engine is an optional extra and a `check_tools` entry, with **no** tool wired to it; nothing in the toolchain ranks malicious-looking behaviours.
-- *Proposal:* `quark_scan(apk_path, severity_min?, max_results?)` — run quark's rule engine over an APK and return scored behaviour matches (e.g. "load dex from external source", "send SMS"). This turns `apk_analyze_full` into a genuine triage pipeline: apkid (packer) + apkleaks (leaks) + manifest (exposure) + quark (behaviour).
-- *Effort:* S–M (quark has a stable Python API; handler pattern already exists in `static.py`).
+**E-PY-3. New tool: `quark_scan` (uses the dependency that is already being asked for) — *Current: landed*** — **Status: done**
+- *Was:* quark-engine is an optional extra and a `check_tools` entry, with **no** tool wired to it; nothing in the toolchain ranks malicious-looking behaviours.
+- *Done:* `quark_scan(apk_path, keywords?, min_score?, max_results?, rules_dir?)` in `handlers/static.py` runs quark's rule engine over an APK and returns scored behaviour matches — each with `crime`, quark's five-stage `level` (only level ≥ 4 produce behaviours), base `score`, requested `permission`, and the `caller`/`first_api`/`second_api` triple. The rule set is **not bundled** (quark-rules is a separate repo): the tool reads freshquark's `~/.quark-engine/quark-rules/rules` (or an explicit `rules_dir`) and returns a `missing_tool` with a "run freshquark" hint when there is none, so no network call happens behind the server's back. `apk_analyze_full` gained a fourth best-effort `quark` stage: `missing_tool` stages are recorded in `tool_statuses` but excluded from both the error map and the health count (an optional extra can't make the pipeline "degraded" for environments that didn't install it), while a real stage `error` still does. quark-as-a-module is checked by the existing `_check_python_module` entry, whose `used_by` is now `["quark_scan", "apk_analyze_full"]`. Tests: `tests/test_quark_scan.py` (engine-absent honesty, discovery, handcrafted-rule pipeline, rules-absent hint, stage wiring; `importorskip("quark")` guards the engine-dependent ones). Live: 281 rules evaluated over TermuxBoot in ~5 s → 7 level-5/5 matches including "Monitor device boot completion" in `com.termux.boot.BootReceiver.onReceive`; `apk_analyze_full` reports all four stages `ok`.
 
 **E-PY-4. Make handlers non-blocking (the fix for F-PY-4) — *Current: landed*** — **Status: fixed**
 - *Was:* every handler ran synchronously inside the asyncio `call_tool`; a 5-minute jadx run froze the server.
