@@ -354,6 +354,7 @@ Every tool takes the file as an absolute path, `apk_path` for Android or `ipa_pa
 | `android_google_services` | Firebase and Google Cloud settings from `google-services.json` and `resources.arsc` | `strings` |
 | `android_secrets_scanner` | Hardcoded keys and credentials in DEX files, resources and assets | `strings` |
 | `android_native_libraries` | Every `lib/<abi>/*.so` with known packer/RASP/framework/SDK matches and ELF section inspection | nothing |
+| `apk_diff` | Two builds side by side: identity/SDK levels, flags, permission and exported-component deltas, native-library changes (sha256), secret deltas, archive inventory | `aapt`/`aapt2` for the manifest sections, `strings` for secrets |
 | `ios_manifest_analyzer` | Bundle info, ATS settings, URL schemes, background modes, warnings | `plutil` for binary plists |
 | `ios_permissions_checker` | Privacy permission strings ranked HIGH, MEDIUM or LOW | `plutil` for binary plists |
 | `ios_entitlements_checker` | Entitlements, with flags like `get-task-allow` and sandbox exceptions | `codesign` (macOS) |
@@ -362,7 +363,7 @@ Every tool takes the file as an absolute path, `apk_path` for Android or `ipa_pa
 | `ios_google_services` | The contents of `GoogleService-Info.plist` | `plutil` for binary plists |
 | `ios_secrets_scanner` | Secrets in resource files and in the binary, with severity | `strings` |
 
-Some tools take extra options. `smali_folder` lets the Android tools reuse an existing decompile. `android_api_extractor` also takes `output_format` (`txt` or `postman`). The scanners take `min_length`, and `ios_binary_strings` takes `filter` (`all`, `url`, `key`, `email` or `ip`).
+Some tools take extra options. `smali_folder` lets the Android tools reuse an existing decompile. `android_api_extractor` also takes `output_format` (`txt` or `postman`). The scanners take `min_length`, and `ios_binary_strings` takes `filter` (`all`, `url`, `key`, `email` or `ip`). `apk_diff` takes `skip_secrets` to leave the (slower) secret-scan diff out.
 
 `aapt`, `apktool`, `strings` and `plutil` need to be on your PATH. `plutil` and `codesign` only exist on macOS. Most real IPAs use binary plists, so on Linux the plist-based iOS tools only work on IPAs with XML plists, and the full iOS set is best run on a Mac. On Windows the tools start without a shell, so `apktool` has to resolve to a real `.exe`, not `apktool.bat`.
 

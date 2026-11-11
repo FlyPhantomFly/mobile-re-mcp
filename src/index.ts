@@ -10,6 +10,7 @@ import { apkPermissionsChecker } from "./tools/android/permissions-checker.js";
 import { androidGoogleServices } from "./tools/android/google-services.js";
 import { androidSecretsScanner } from "./tools/android/secrets-scanner.js";
 import { androidNativeLibraries } from "./tools/android/native-libraries.js";
+import { apkDiff } from "./tools/android/apk-diff.js";
 import { iosManifestAnalyzer } from "./tools/ios/manifest-analyzer.js";
 import { iosPermissionsChecker } from "./tools/ios/permissions-checker.js";
 import { iosEntitlementsChecker } from "./tools/ios/entitlements-checker.js";
@@ -82,6 +83,15 @@ function createServer(): McpServer {
       inputSchema: z.object(androidNativeLibraries.schema),
     },
     androidNativeLibraries.handler
+  );
+
+  server.registerTool(
+    "apk_diff",
+    {
+      description: apkDiff.description,
+      inputSchema: z.object(apkDiff.schema),
+    },
+    apkDiff.handler
   );
 
   // iOS tools

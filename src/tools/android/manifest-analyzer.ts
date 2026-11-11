@@ -19,30 +19,15 @@ export const apkManifestAnalyzer = {
     if (!apk.ok) return errorResult(apk.error);
     const apkPath = apk.path;
 
-    // Try aapt first (faster, no full decompile needed), then aapt2, then
-    // apktool. If a tool prints something we cannot read, try the next
-    // before giving up — aapt2-only machines no longer pay the apktool cost.
-    let source = "aapt";
-    let manifestText = extractManifestViaAapt(apkPath);
-    let root = manifestText ? parseManifest(manifestText) : null;
-
-    if (!root) {
-      source = "aapt2";
-      manifestText = extractManifestViaAapt2(apkPath);
-      root = manifestText ? parseManifest(manifestText) : null;
-    }
-
-    if (!root) {
-      source = "apktool";
-      manifestText = extractManifestViaApktool(apkPath);
-      root = manifestText ? parseManifest(manifestText) : null;
-    }
-
-    if (!root) {
+    // aapt first (faster, no full decompile needed), then aapt2, then
+    // apktool — see extractAndroidManifest for the shared fallback chain.
+    const manifest = extractAndroidManifest(apkPath);
+    if (!manifest) {
       return errorResult(
         "Could not read AndroidManifest.xml. Install aapt/aapt2 (Android build-tools) or apktool and make sure it is on PATH."
       );
     }
+    const { source, root } = manifest;
 
     return { content: [{ type: "text" as const, text: analyzeManifest(root, source) }] };
   },
@@ -78,6 +63,31 @@ function extractManifestViaApktool(apkPath: string): string | null {
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+}
+
+export interface ManifestRead {
+  text: string;
+  source: string;
+  root: ManifestNode;
+}
+
+/**
+ * The aapt → aapt2 → apktool fallback chain shared by the manifest
+ * analyzer and apk_diff. Returns null when no tool could produce a
+ * parsable manifest.
+ */
+export function extractAndroidManifest(apkPath: string): ManifestRead | null {
+  const attempts: [string, string | null][] = [
+    ["aapt", extractManifestViaAapt(apkPath)],
+    ["aapt2", extractManifestViaAapt2(apkPath)],
+    ["apktool", extractManifestViaApktool(apkPath)],
+  ];
+  for (const [source, text] of attempts) {
+    if (!text) continue;
+    const root = parseManifest(text);
+    if (root) return { text, source, root };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

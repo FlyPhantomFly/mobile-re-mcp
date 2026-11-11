@@ -1,4 +1,5 @@
 import { z } from "zod";
+import AdmZip from "adm-zip";
 import { run, checkInputFile, checkInputDir, errorResult } from "../shared/safe-exec.js";
 import { openZip, readEntry, skippedPlaceholder } from "../shared/zip.js";
 import { SECRET_PATTERNS, scanText, renderResults, mergeScanResults } from "../shared/patterns.js";
@@ -8,6 +9,81 @@ import * as path from "path";
 import * as os from "os";
 
 const TEXT_ASSET_EXTENSIONS = [".json", ".xml", ".txt", ".properties", ".yaml", ".yml", ".plist"];
+
+/**
+ * The raw-APK scan path shared by android_secrets_scanner and apk_diff:
+ * strings on every classes*.dex and resources.arsc, plus SECRET_PATTERNS
+ * over in-zip text assets. Progress/skip lines go to the optional sink.
+ */
+export function collectRawApkSecrets(
+  zip: AdmZip,
+  minLen: number,
+  sink?: (line: string) => void
+): ScanResults {
+  const push = sink ?? (() => {});
+  const all: ScanResults = new Map();
+  const merge = (results: ScanResults) => mergeScanResults(all, results);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "apk-sec-"));
+  try {
+    // DEX files
+    const dexEntries = zip.getEntries().filter(
+      (e) => !e.isDirectory && /^classes\d*\.dex$/.test(e.entryName)
+    );
+    for (const entry of dexEntries) {
+      const read = readEntry(entry);
+      if (!read.ok) {
+        push(`  ${skippedPlaceholder(read.reason)}`);
+        continue;
+      }
+      const tmp = path.join(tmpDir, entry.entryName);
+      fs.writeFileSync(tmp, read.data);
+      try {
+        const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 100 * 1024 * 1024 });
+        merge(scanText(out, SECRET_PATTERNS));
+      } catch { /* strings failed */ }
+    }
+    push(`  Scanned: ${dexEntries.length} DEX file(s)`);
+
+    // resources.arsc
+    const arscEntry = zip.getEntry("resources.arsc");
+    if (arscEntry) {
+      const arscRead = readEntry(arscEntry);
+      if (!arscRead.ok) {
+        push(`  ${skippedPlaceholder(arscRead.reason)}`);
+      } else {
+        const tmp = path.join(tmpDir, "resources.arsc");
+        fs.writeFileSync(tmp, arscRead.data);
+        try {
+          const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 50 * 1024 * 1024 });
+          merge(scanText(out, SECRET_PATTERNS));
+        } catch { /* strings failed */ }
+        push(`  Scanned: resources.arsc`);
+      }
+    }
+
+    // Text assets inside ZIP
+    let assetCount = 0;
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue;
+      if (!entry.entryName.startsWith("assets/")) continue;
+      if (!TEXT_ASSET_EXTENSIONS.some((ext) => entry.entryName.endsWith(ext))) continue;
+      try {
+        const read = readEntry(entry);
+        if (read.ok) {
+          merge(scanText(read.data.toString("utf-8"), SECRET_PATTERNS));
+          assetCount++;
+        } else {
+          push(`  ${skippedPlaceholder(read.reason)}`);
+        }
+      } catch { /* skip */ }
+    }
+    if (assetCount > 0) push(`  Scanned: ${assetCount} text asset(s)`);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  return all;
+}
 
 export const androidSecretsScanner = {
   description:
@@ -84,65 +160,7 @@ export const androidSecretsScanner = {
     } else {
       // ── Raw APK path: strings on binaries + text assets ───────────────────
       lines.push(`Mode: raw APK (strings on DEX + resources.arsc + text assets)\n`);
-
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "apk-sec-"));
-      try {
-        // DEX files
-        const dexEntries = zip.getEntries().filter(
-          (e) => !e.isDirectory && /^classes\d*\.dex$/.test(e.entryName)
-        );
-        for (const entry of dexEntries) {
-          const read = readEntry(entry);
-          if (!read.ok) {
-            lines.push(`  ${skippedPlaceholder(read.reason)}`);
-            continue;
-          }
-          const tmp = path.join(tmpDir, entry.entryName);
-          fs.writeFileSync(tmp, read.data);
-          try {
-            const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 100 * 1024 * 1024 });
-            merge(scanText(out, SECRET_PATTERNS));
-          } catch { /* strings failed */ }
-        }
-        lines.push(`  Scanned: ${dexEntries.length} DEX file(s)`);
-
-        // resources.arsc
-        const arscEntry = zip.getEntry("resources.arsc");
-        if (arscEntry) {
-          const arscRead = readEntry(arscEntry);
-          if (!arscRead.ok) {
-            lines.push(`  ${skippedPlaceholder(arscRead.reason)}`);
-          } else {
-            const tmp = path.join(tmpDir, "resources.arsc");
-            fs.writeFileSync(tmp, arscRead.data);
-            try {
-              const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 50 * 1024 * 1024 });
-              merge(scanText(out, SECRET_PATTERNS));
-            } catch { /* strings failed */ }
-            lines.push(`  Scanned: resources.arsc`);
-          }
-        }
-
-        // Text assets inside ZIP
-        let assetCount = 0;
-        for (const entry of zip.getEntries()) {
-          if (entry.isDirectory) continue;
-          if (!entry.entryName.startsWith("assets/")) continue;
-          if (!TEXT_ASSET_EXTENSIONS.some((ext) => entry.entryName.endsWith(ext))) continue;
-          try {
-            const read = readEntry(entry);
-            if (read.ok) {
-              merge(scanText(read.data.toString("utf-8"), SECRET_PATTERNS));
-              assetCount++;
-            } else {
-              lines.push(`  ${skippedPlaceholder(read.reason)}`);
-            }
-          } catch { /* skip */ }
-        }
-        if (assetCount > 0) lines.push(`  Scanned: ${assetCount} text asset(s)`);
-      } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
+      merge(collectRawApkSecrets(zip, minLen, (line) => lines.push(line)));
       lines.push(``);
     }
 
