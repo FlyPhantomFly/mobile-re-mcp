@@ -101,9 +101,11 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 `test-tools.mjs` is advertised by `package.json` (`npm run test:tools`) but: headers say "1/8 … 8/8" while 12 tools exist; it never calls `android_google_services`, `android_secrets_scanner`, `ios_google_services`, `ios_secrets_scanner`; and it requires `example.apk`/`example.ipa` in the repo root, which `.gitignore` excludes — it cannot run on a fresh clone. The real tests (`node --test "test/*.test.mjs"` in CI) cover only the manifest parser — 1 of 12 tools.
 
-### F-NPM-2. Manifest analyzer ignores the `aapt2` fallback it already supports
+### F-NPM-2. Manifest analyzer ignores the `aapt2` fallback it already supports — **[code]** — **Status: fixed**
 
 `apk_permissions_checker` tries `aapt` → `aapt2` → `apktool`; `apk_manifest_analyzer` tries `aapt` → apktool only, even though `parseManifest()` handles the aapt2 tree format and the repo ships the `test/fixtures/aapt2-xmltree.txt` proving it. On aapt2-only machines the manifest tool always pays the apktool cost.
+
+*Fix:* `apk_manifest_analyzer` now walks the same `aapt` → `aapt2` → `apktool` chain (`aapt2 dump xmltree --file AndroidManifest.xml <apk>`), keeping the `Source:` label so the report still names which tool produced it. Verified live with a broken-`aapt` shim first on PATH: report comes out `Source: aapt2` with the full component analysis; with both healthy, `Source: aapt` (unchanged). The existing fixture tests already cover aapt2 tree parsing on both formats.
 
 ### F-NPM-3. Triple-duplicated iOS binary-extraction logic — **[code]** — **Status: fixed**
 

@@ -19,21 +19,28 @@ export const apkManifestAnalyzer = {
     if (!apk.ok) return errorResult(apk.error);
     const apkPath = apk.path;
 
-    // Try aapt first (faster, no full decompile needed), fall back to apktool.
-    // If aapt prints something we cannot read, try apktool before giving up.
+    // Try aapt first (faster, no full decompile needed), then aapt2, then
+    // apktool. If a tool prints something we cannot read, try the next
+    // before giving up — aapt2-only machines no longer pay the apktool cost.
     let source = "aapt";
     let manifestText = extractManifestViaAapt(apkPath);
     let root = manifestText ? parseManifest(manifestText) : null;
 
     if (!root) {
+      source = "aapt2";
+      manifestText = extractManifestViaAapt2(apkPath);
+      root = manifestText ? parseManifest(manifestText) : null;
+    }
+
+    if (!root) {
+      source = "apktool";
       manifestText = extractManifestViaApktool(apkPath);
       root = manifestText ? parseManifest(manifestText) : null;
-      source = "apktool";
     }
 
     if (!root) {
       return errorResult(
-        "Could not read AndroidManifest.xml. Install aapt (Android build-tools) or apktool and make sure it is on PATH."
+        "Could not read AndroidManifest.xml. Install aapt/aapt2 (Android build-tools) or apktool and make sure it is on PATH."
       );
     }
 
@@ -44,6 +51,14 @@ export const apkManifestAnalyzer = {
 function extractManifestViaAapt(apkPath: string): string | null {
   try {
     return run("aapt", ["dump", "xmltree", apkPath, "AndroidManifest.xml"]);
+  } catch {
+    return null;
+  }
+}
+
+function extractManifestViaAapt2(apkPath: string): string | null {
+  try {
+    return run("aapt2", ["dump", "xmltree", "--file", "AndroidManifest.xml", apkPath]);
   } catch {
     return null;
   }
