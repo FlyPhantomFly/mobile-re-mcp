@@ -9,6 +9,7 @@ import { apkManifestAnalyzer } from "./tools/android/manifest-analyzer.js";
 import { apkPermissionsChecker } from "./tools/android/permissions-checker.js";
 import { androidGoogleServices } from "./tools/android/google-services.js";
 import { androidSecretsScanner } from "./tools/android/secrets-scanner.js";
+import { androidNativeLibraries } from "./tools/android/native-libraries.js";
 import { iosManifestAnalyzer } from "./tools/ios/manifest-analyzer.js";
 import { iosPermissionsChecker } from "./tools/ios/permissions-checker.js";
 import { iosEntitlementsChecker } from "./tools/ios/entitlements-checker.js";
@@ -72,6 +73,15 @@ function createServer(): McpServer {
       inputSchema: z.object(androidSecretsScanner.schema),
     },
     androidSecretsScanner.handler
+  );
+
+  server.registerTool(
+    "android_native_libraries",
+    {
+      description: androidNativeLibraries.description,
+      inputSchema: z.object(androidNativeLibraries.schema),
+    },
+    androidNativeLibraries.handler
   );
 
   // iOS tools

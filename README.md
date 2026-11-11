@@ -353,6 +353,7 @@ Every tool takes the file as an absolute path, `apk_path` for Android or `ipa_pa
 | `android_api_extractor` | Retrofit endpoints and OkHttp fields from decompiled smali, as text or a Postman collection | `apktool`, or a smali folder you already have |
 | `android_google_services` | Firebase and Google Cloud settings from `google-services.json` and `resources.arsc` | `strings` |
 | `android_secrets_scanner` | Hardcoded keys and credentials in DEX files, resources and assets | `strings` |
+| `android_native_libraries` | Every `lib/<abi>/*.so` with known packer/RASP/framework/SDK matches and ELF section inspection | nothing |
 | `ios_manifest_analyzer` | Bundle info, ATS settings, URL schemes, background modes, warnings | `plutil` for binary plists |
 | `ios_permissions_checker` | Privacy permission strings ranked HIGH, MEDIUM or LOW | `plutil` for binary plists |
 | `ios_entitlements_checker` | Entitlements, with flags like `get-task-allow` and sandbox exceptions | `codesign` (macOS) |
