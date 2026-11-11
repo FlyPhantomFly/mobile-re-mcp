@@ -58,34 +58,40 @@ Where it lives: `handlers/static.py:229-257` (`manifest_parse`), `:315-383` (`an
 
 *Fix:* all CLI consumers and `check_tools` resolve through the new `mobile_re_mcp.clitools.find_cli` (PATH first, then the console-script dir next to the running interpreter — venv installs where PATH misses the venv bin); apkleaks/apkid are probed as executables; `medusa` runs a version probe and rejects any banner containing `foofus.net` with a GitHub hint for the real framework; `install_tool` no longer has a pip recipe for `medusa`/`fridump` (manual-required).
 
-### F-PY-3. The built-in Frida script library is a façade — **[verified live]**
+### F-PY-3. The built-in Frida script library is a façade — **[verified live]** — **Status: fixed**
 
 `frida_scripts/index.py` catalogues 8 scripts (`ssl_pinning_universal`, `root_detection_bypass`, `frida_detection_bypass`, `crypto_monitor`, `memory_scan`, `method_tracer`, `storage_monitor`, `network_monitor`) but the package ships **zero `.js` files** (`frida_scripts/` contains only `index.py`, `__init__.py`). `frida_list_scripts` correctly applies the 1.2.0 fix that only lists files that exist, so live result: `total: 0, available_categories: []`.
 
 Consequences beyond the library itself: `frida_find_bytes` **depends on the missing `memory_scan.js`** (dynamic.py:547-549 returns an error if absent), and the docs' "frida_get_script → frida_run_script" workflow is unusable out of the box. The CHANGELOG 1.2.0 entry ("It now lists only scripts that exist") papered over the symptom instead of shipping the files.
 
-### F-PY-4. Sync handlers block the asyncio event loop — **[code]**
+*Fix:* all 8 `.js` files are shipped with the package (E-PY-1, commit `4270bd9`), every script implements the config protocol, and the library is guarded by unit tests that compare the catalogue against what is on disk.
+
+### F-PY-4. Sync handlers block the asyncio event loop — **[code]** — **Status: fixed**
 
 `server.py`'s `call_tool` invokes every handler directly; all handlers are synchronous (`subprocess.run` with 120–600 s timeouts, `time.sleep(1)` in `mitm_start`). Inside asyncio, this freezes the whole server for the duration of e.g. a jadx decompile. — no other tool call is processed, even in SSE mode with a second client.
 
-### F-PY-5. Config values for Frida scripts are injected by textual `var X = "";` replacement — **[code]**
+*Fix:* E-PY-4 (commit `ed2fd6b`): `call_tool` is a thin wrapper over `_run_tool`; stateless handlers run via `asyncio.to_thread` and the three stateful classes own a dedicated single-worker pool (`_SERIALIZE`), proven by `tests/test_concurrency.py`.
+
+### F-PY-5. Config values for Frida scripts are injected by textual `var X = "";` replacement — **[code]** — **Status: fixed**
 
 `frida_run_script` (dynamic.py:265-270) and `frida_find_bytes` (dynamic.py:553-563) patch values into JS via `str.replace`. Any apostrophe or quote in a user-provided search string breaks (or re-flows) the injected script, and the pattern depends on the script author remembering an exact `var SEARCH_STRING = "";` line. A message-passing config protocol (below) removes both hazards.
 
-### F-PY-6. Dead weight in dependencies and checks — **[code]** — **Status: partially fixed**
+*Fix:* E-PY-6 (commit `a4e15e1`): parameters travel as `{'type':'config', …}` posted after load; the textual replacement is gone from `frida_run_script` and demoted to a documented fallback inside `frida_find_bytes`.
+
+### F-PY-6. Dead weight in dependencies and checks — **[code]** — **Status: fixed**
 
 - `quark-engine` is an optional extra **and** a check_tools entry, but no handler references it (grep: zero uses). Install cost ~200 MB for nothing. *(resolved by E-PY-3 `quark_scan`)*
 - `capstone` and `keystone-engine` are checked in check_tools.py:211-212 but used by nothing. → **removed from the check list** (still installable via `install_tool` on demand)
 - `fridump` is checked in check_tools.py:183 and installed by `--setup`, but `frida_memdump` deliberately does not use fridump (dynamic.py:450 comment: "does NOT require fridump"). → **removed from the check list and the install recipes**
 - `_check_binary("medusa")` — see F-PY-2. → **disambiguated by running the binary and rejecting the foofus.net banner**
 
-### F-PY-7. Assorted smaller items — **[code]**
+### F-PY-7. Assorted smaller items — **[code]** — **Status: fixed**
 
-- `manifest_parse`'s `exported_services` filter is logically unrelated to services: `[s for s in apk.get_services() if apk.get_declared_permissions_dict()]` returns services whenever the APK declares **any** permission (static.py:246-248).
-- `mitm_export_har`'s helper script uses `datetime.utcnow()` (deprecated in 3.12+).
-- `frida_memdump` defaults its dump folder into `~/tools/dumps` — the tools-download dir doubles as output dir; `data_dir()/dumps` would be the right home.
-- `adb_shell` runs `shlex.split(command)` then hands argv to `adb`, which rejoins them — device-side operators (`|`, `&&`) still work, but space-containing single arguments cannot be expressed; worth one line in docs.
-- `install_all_missing_tools()` installs `medusa` from `core_tools` — coupled with F-PY-2, it would pip-install the cracker rather than the framework.
+- `manifest_parse`'s `exported_services` filter is logically unrelated to services: `[s for s in apk.get_services() if apk.get_declared_permissions_dict()]` returns services whenever the APK declares **any** permission (static.py:246-248). → **fixed** by the XML-driven manifest rewrite (E-PY-2, commit `bec0bfc`).
+- `mitm_export_har`'s helper script uses `datetime.utcnow()` (deprecated in 3.12+). → **fixed** (E-PY-9, commit `cc3e59e`).
+- `frida_memdump` defaults its dump folder into `~/tools/dumps` — the tools-download dir doubles as output dir; `data_dir()/dumps` would be the right home. → **fixed** (E-PY-9).
+- `adb_shell` runs `shlex.split(command)` then hands argv to `adb`, which rejoins them — device-side operators (`|`, `&&`) still work, but space-containing single arguments cannot be expressed; worth one line in docs. → **documented in the tool description** (E-PY-9).
+- `install_all_missing_tools()` installs `medusa` from `core_tools` — coupled with F-PY-2, it would pip-install the cracker rather than the framework. → **fixed in-commit** during F-PY-2: `medusa` left the pip recipe path entirely (`_MANUAL_TOOLS` with instructions).
 
 ### F-PY-8. Things verified to work well — **[verified live]**
 
@@ -97,9 +103,11 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 ## Part 2 — npm server: findings (code-read; all paths under `src/`)
 
-### F-NPM-1. Stale and non-hermetic smoke script
+### F-NPM-1. Stale and non-hermetic smoke script — **Status: fixed**
 
 `test-tools.mjs` is advertised by `package.json` (`npm run test:tools`) but: headers say "1/8 … 8/8" while 12 tools exist; it never calls `android_google_services`, `android_secrets_scanner`, `ios_google_services`, `ios_secrets_scanner`; and it requires `example.apk`/`example.ipa` in the repo root, which `.gitignore` excludes — it cannot run on a fresh clone. The real tests (`node --test "test/*.test.mjs"` in CI) cover only the manifest parser — 1 of 12 tools.
+
+*Fix:* commit `90545cb`. The smoke runner now discovers the tool list from the server itself (14 today), calls every tool with a fixture recipe, skips the rest with a stated reason, and — without the fixture files — prints the full inventory plus the `npm test` pointer instead of failing. `npm test` (build + `node --test`) is now a first-class script, and the hermetic suite covers 14 tools with 25 test cases.
 
 ### F-NPM-2. Manifest analyzer ignores the `aapt2` fallback it already supports — **[code]** — **Status: fixed**
 
@@ -119,16 +127,16 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 *Fix:* `src/tools/shared/zip.ts` is the single zip gateway: `openZip` (checks the input against `MOBILE_RE_MCP_MAX_FILE_MB`, default 2048, then opens with a normalized error — also fixing the one unprotected `new AdmZip` in frameworks-detector), `readEntry` (checks `header.compressedSize`/`header.size` against `MOBILE_RE_MCP_MAX_ENTRY_MB`, default 256, *before* decompressing), `requireEntryData` for single-entry callers, and a `[skipped: …]` placeholder for scan loops. `0` disables a cap. Every APK/IPA consumer is wired through it. Verified live: a 2 KB APK whose `assets/big.json` decompresses to 2 MB is reported as `[skipped: entry 'assets/big.json' declares 2.0 MB uncompressed, above the 1 MB cap …]` with the rest of the scan intact; a 2 MB input with `MOBILE_RE_MCP_MAX_FILE_MB=1` fails with `input file is 2.0 MB, above the 1 MB cap`. Tests: `test/zip-limits.test.mjs` (6 cases).
 
-### F-NPM-5. Other smaller items
+### F-NPM-5. Other smaller items — **Status: partially fixed** (each bullet below)
 
-- `ios_frameworks_detector` has an unprotected `new AdmZip(...)` (frameworks-detector.ts:132) — the only zip access not wrapped in try/catch, so a valid-magic/corrupt IPA throws past the repo's error normalization. Also `DexGuard` (an Android obfuscator) sits in the iOS `KNOWN_FRAMEWORKS` table, and matching uses loose `startsWith || includes`, so names like "Segment", "Branch" or "Realm" inside unrelated frameworks can mislabel. **[code]**
-- `min_length` default is 6 for `ios_binary_strings` but 8 for both secret scanners — same operation family, different defaults. **[code]**
-- `ios_google_services` skips binary plists during pattern rescan (`bplist` → continue) while `ios_secrets_scanner` decodes those same plists through `plutil` — inconsistent findings between two tools over the same files. **[code]**
-- `android_api_extractor` claims OkHttp endpoint extraction but collects only `Lokhttp3/` *field declarations*; no URLs come from it — only Retrofit annotations produce endpoints (api-extractor.ts:80-93). **[code]**
-- Dead code: `p.startsWith("{") ? p : p` (api-extractor.ts:168-169); pointless `chmodSync(0o755)` on the extracted iOS binary (entitlements-checker.ts:127); string-sentinel control flow `Record|null|"simulator"` (entitlements-checker).
-- Android `DANGEROUS_PERMISSIONS` includes `ACCESS_WIFI_STATE` / `CHANGE_WIFI_STATE`, which are install-time "normal" permissions, plus signature-type `INSTALL_PACKAGES` — defensible as a triage list, but mislabeled against Google's taxonomy. **[code]**
-- `/[0-9a-zA-Z]{40}/g` in `ios_binary_strings` labels every 40-char alnum run a key — noisy on real apps. **[code]**
-- Windows `apktool.bat` support is prose-only; `execFileSync("apktool", …)` fails with ENOENT and offers no hint at runtime. **[code]**
+- `ios_frameworks_detector` has an unprotected `new AdmZip(...)` (frameworks-detector.ts:132) — the only zip access not wrapped in try/catch, so a valid-magic/corrupt IPA throws past the repo's error normalization. Also `DexGuard` (an Android obfuscator) sits in the iOS `KNOWN_FRAMEWORKS` table, and matching uses loose `startsWith || includes`, so names like "Segment", "Branch" or "Realm" inside unrelated frameworks can mislabel. **[code]** → *both fixed:* the unprotected open is wrapped by the zip gateway (F-NPM-4, commit `daa3e4b`); DexGuard is removed and the matcher is prefix-or-exact only (commit `90545cb`).
+- `min_length` default is 6 for `ios_binary_strings` but 8 for both secret scanners — same operation family, different defaults. **[code]** → *fixed* (commit `90545cb`: 8 everywhere).
+- `ios_google_services` skips binary plists during pattern rescan (`bplist` → continue) while `ios_secrets_scanner` decodes those same plists through `plutil` — inconsistent findings between two tools over the same files. **[code]** → *deferred (reason:* behavioral change needing binary-plist fixtures to prove; the tools' reports are independently labeled, so no finding is *hidden* — follow-up candidate*).*
+- `android_api_extractor` claims OkHttp endpoint extraction but collects only `Lokhttp3/` *field declarations*; no URLs come from it — only Retrofit annotations produce endpoints (api-extractor.ts:80-93). **[code]** → *deferred to E-NPM-5 (reason:* not in the approved extension order for this round; the const-string harvest proposal stands — README wording already narrows the claim*).*
+- Dead code: `p.startsWith("{") ? p : p` (api-extractor.ts:168-169); pointless `chmodSync(0o755)` on the extracted iOS binary (entitlements-checker.ts:127); string-sentinel control flow `Record|null|"simulator"` (entitlements-checker). → *dead ternary and chmod fixed* (commits `90545cb` / `0925a77`); *sentinel wontfix (reason:* internal three-state used by exactly one caller — reshaping it is churn without a behavior change*).*
+- Android `DANGEROUS_PERMISSIONS` includes `ACCESS_WIFI_STATE` / `CHANGE_WIFI_STATE`, which are install-time "normal" permissions, plus signature-type `INSTALL_PACKAGES` — defensible as a triage list, but mislabeled against Google's taxonomy. **[code]** → *fixed in-commit* (`cc3e59e`: the set keeps triage semantics under a renamed "Sensitive Permissions" header with the taxonomy note in the source).
+- `/[0-9a-zA-Z]{40}/g` in `ios_binary_strings` labels every 40-char alnum run a key — noisy on real apps. **[code]** → *deferred (reason:* tightening risks *missing* real 40-char keys; noise is labeled LOW risk and capped — safer to leave*).*
+- Windows `apktool.bat` support is prose-only; `execFileSync("apktool", …)` fails with ENOENT and offers no hint at runtime. **[code]** → *fixed* (commit `90545cb`: `run()` converts bare ENOENT into "not found on PATH" with the Windows .exe-vs-.bat note).
 
 ### F-NPM-6. Verified working end-to-end — **[verified live]**
 
@@ -146,9 +154,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Was:* catalogue of 8 named scripts, zero `.js` files shipped; `frida_list_scripts` returns 0; `frida_find_bytes` is dead in a fresh install.
 - *Done:* all 8 `.js` files live in `frida_scripts/` matching their catalogue descriptions — `ssl_pinning_universal`, `root_detection_bypass` (Java+native), `frida_detection_bypass` (`Socket.connect` port-scan defeat, native `strstr`/`ptrace`), `crypto_monitor` (Cipher opmode stashed at `init`), `memory_scan` (exact `var SEARCH_STRING/SEARCH_HEX/MAX_RESULTS` lines `frida_find_bytes` patch), `method_tracer`, `storage_monitor`, `network_monitor`. Every script registers a re-armed `recv('config', …)` handler (UPPER-case primary keys, lowercase accepted) — the forward-compatible half of the E-PY-6 protocol. Catalogue `usage` strings document the config keys. Tests: library completeness, user-override precedence, per-script config handler presence, and the `memory_scan` var/message contract; `node --check` = 8/8. Live: `frida_list_scripts` returns 8; `frida_get_script('memory_scan')` returns the real source with the contract lines.
 
-**E-PY-2. androguard 4.x compatibility pass (the fix for F-PY-1)**
+**E-PY-2. androguard 4.x compatibility pass (the fix for F-PY-1) — *Current: landed*** — **Status: fixed (commit `bec0bfc`)**
 - *Current:* `manifest_parse`, `analyze_code`, `find_crypto_usage` fail or mis-behave under the androguard that `[static]` installs today.
-- *Proposal:* port the three tools to the 4.1.x API — derive exported activities/services from the parsed manifest element API instead of `get_activity_is_exported` (this also fixes the unrelated services filter, F-PY-7); consume `get_xref_from()`/`get_xref_to()` tuples correctly in both call-graph tools; while there, make `apk_analyze_full` fail loudly (status reflects child failures) instead of masking. Pin `androguard` to a known-good range after the port and add one integration test using a fixture APK so this class of drift cannot ship again.
+- *Done:* `manifest_parse` is XML-driven with explicit/auto/auto-pre-17 `exported_mode` markers (which also fixed the unrelated services filter, F-PY-7); the xref helpers tolerate 3.x 2-tuples, 4.x 3-tuples and method objects (`_xref_names`); `apk_analyze_full` reports per-stage statuses and degrades honestly; `androguard>=4.0,<5` is pinned in `[static]` and `[dev]`; `tests/test_androguard_tools.py` runs the whole expectation set against `tests/fixtures/notesdemo.apk` plus shape-fakes so this drift cannot ship silently again.
 - *Effort:* M.
 - *Verify with:* the live smoke tests already used here (same APK expectation set).
 
@@ -160,9 +168,9 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Was:* every handler ran synchronously inside the asyncio `call_tool`; a 5-minute jadx run froze the server.
 - *Done:* `call_tool` is now a thin wrapper over module-level `async def _run_tool(name, args, dispatch, serial_pools)` (server.py): guard refusals → `isError` results, async handlers awaited, sync handlers run on worker threads. Stateless classes go through `asyncio.to_thread` (concurrent calls overlap); the three stateful classes that own process/session state — `DynamicHandler` (Frida session/queue), `NetworkHandler` (mitm proc), `DeviceHandler` (logcat reader) — flag themselves with `_SERIALIZE` and execute on a dedicated max_workers=1 pool, preserving the previous serial ordering for their shared state. Tests: `tests/test_concurrency.py` proves a slow sync handler no longer stalls the loop and that two calls to a stateful class queue instead of overlapping. Live: server boots, `list_tools` + static + setup dispatch all healthy through the shared tree.
 
-**E-PY-5. Honesty pass on `check_tools` (the fix for F-PY-2)**
+**E-PY-5. Honesty pass on `check_tools` (the fix for F-PY-2) — *Current: landed*** — **Status: fixed (commit `eb76d83`)**
 - *Current:* inventory checks Python modules where the tools need CLIs, and collides with an unrelated binary named `medusa`.
-- *Proposal:* for each entry record *how the tool is invoked* (CLI vs module vs jar) and check exactly that (apkleaks via `shutil.which`; quark via `shutil.which("quark")` once E-PY-3 lands; remove capstone/keystone checks until a tool uses them; drop `fridump` or actually use it; check medusa-framework via `pip show medusa-framework` + its console script, not `medusa`); add a per-entry `used_by` list of MCP tool names so the assistant can reason about "what breaks if this is missing".
+- *Done:* every entry records how the tool is actually invoked and checks exactly that (pip CLIs probed as executables via the shared `find_cli`; `quark` as a module wired to `quark_scan`; capstone/keystone and fridump removed from the checks; medusa rejects the foofus.net cracker banner with a hint to the framework repo); every entry carries a `used_by` list of MCP tool names so the assistant can reason about "what breaks if this is missing". Fidelity guarded by `tests/test_check_tools_honesty.py`.
 - *Effort:* S.
 
 **E-PY-6. Config protocol for Frida scripts (the fix for F-PY-5) — *Current: landed*** — **Status: done**
@@ -178,10 +186,8 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Was:* the server can screenshot the UI (`scrcpy_screenshot`), but the assistant has no structured view of it — driving test flows ("tap login") is guesswork from pixels.
 - *Done:* `adb_ui_dump(serial?)` in `handlers/device.py` — `adb exec-out uiautomator dump /dev/tty` with an automatic fallback to the two-step dump-then-cat, parsed with ElementTree into a flat element list (class, text, content-desc, resource-id, bounds, clickable/scrollable/checked/enabled — plain containers filtered out) plus a human-readable report capped at 80 lines. Malformed XML and devices that produce no dump are honest errors. Tests: `tests/test_adb_ui_dump.py` (5 cases with a fake adb on PATH: element parsing, two-step fallback, total failure, malformed XML, missing adb). Live: device `f982678d` → the tool faithfully reported the window actually on top (an overlay dialog app), including its clickable bounds and texts.
 
-**E-PY-9. Housekeeping**
-- Move `frida_memdump`'s default output under `data_dir()/dumps` (currently `~/tools/dumps`).
-- Deprecate `datetime.utcnow()` in the HAR helper (subprocess script → `datetime.now(timezone.utc)`).
-- Document `adb_shell`'s argument re-joining (space-holding single args not expressible) in the tool description.
+**E-PY-9. Housekeeping — *Current: landed*** — **Status: done (commit `cc3e59e`)**
+- *Done:* `frida_memdump`'s default output is `data_dir()/dumps/<package>`; the HAR helper uses timezone-aware `datetime.now(timezone.utc)`; `adb_shell`'s description documents the host-side split/rejoin and the `sh -c` pattern for device-side operators.
 
 **Deliberately *not* proposed (with reasons)**
 - **iOS support in the Python server** — the npm server already covers iOS static analysis; dynamic iOS work means signing/gadget/bundler pipelines that are a project of their own. Keep the boundary as-is until there's demand.
@@ -189,43 +195,39 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 
 ### npm — extensions
 
-**E-NPM-1. Ship the missing decompressed-size caps (the fix for F-NPM-4)**
+**E-NPM-1. Ship the missing decompressed-size caps (the fix for F-NPM-4) — *Current: landed*** — **Status: fixed (commit `daa3e4b`)**
 - *Current:* any zip entry is decompressed in full into memory before inspection; no input-size cap.
-- *Proposal:* two constants in `safe-exec.ts` — `MAX_INPUT_BYTES` (default e.g. 2 GiB for the package file) and `MAX_ENTRY_BYTES` (default e.g. 256 MiB per decompressed entry) — checked via adm-zip's `header.size` before `getData()`; over-cap entries are reported as skipped `[skipped: too large]` rather than exploding. This is five lines per call site once centralized in a `readEntry(zip, name)` helper (which F-NPM-3 already proposes to create).
+- *Done:* `src/tools/shared/zip.ts` — `openZip` (input cap `MOBILE_RE_MCP_MAX_FILE_MB`, default 2048) and `readEntry` (entry cap `MOBILE_RE_MCP_MAX_ENTRY_MB`, default 256, checked against the local header *before* decompression), `0` disables a cap, over-cap entries surface as `[skipped: …]` placeholders. All eight consumers wired through.
 - *Effort:* S (rides on E-NPM-2's refactor).
 
-**E-NPM-2. Unify iOS binary extraction + add aapt2 fallback (the fixes for F-NPM-3 and F-NPM-2)**
+**E-NPM-2. Unify iOS binary extraction + add aapt2 fallback (the fixes for F-NPM-3 and F-NPM-2) — *Current: landed*** — **Status: fixed (commits `0925a77`, `e7c337f`)**
 - *Current:* three drifting copies of `extractBinary`; manifest analyzer skips `aapt2` even though its parser supports the format.
-- *Proposal:* (a) one `src/tools/shared/ios-extract.ts` used by all three iOS tools, with a single exclusion list and no chmod; (b) in `apk_manifest_analyzer`, try `aapt` → `aapt2 dump xmltree` → `apktool`, mirroring the permissions checker. Both are pure code-health changes that make findings consistent between tools.
+- *Done:* (a) one `src/tools/ios/extract-binary.ts` used by all three iOS tools, with a single union exclusion list and no chmod; (b) `apk_manifest_analyzer` walks `aapt` → `aapt2 dump xmltree` → `apktool` via the shared `extractAndroidManifest`, and `apk_diff` reuses it.
 - *Effort:* S.
 
-**E-NPM-3. New tool: `android_native_libraries`** (the npm-side complement to PyPI's `rasp_identify`)
+**E-NPM-3. New tool: `android_native_libraries` (the npm-side complement to PyPI's `rasp_identify`) — *Current: landed*** — **Status: done (commit `eb422b5`)**
 - *Current:* nothing in either server fingerprints native Android SDKs statically; npm enumerates only iOS frameworks; RASP detection on Android requires the Python device flow.
-- *Proposal:* mirror `ios_frameworks_detector` for `lib/<abi>/*.so` entries: emit the inventory (name, size, ABI) and match a `KNOWN_ANDROID_LIBS` table — packers/protectors (`libjiagu*`/360, `libexecmain`/ijiami, `libmobisec`/Ali, `libsgmain`/Guardsquare, `libDexGuard`, `libtprt`/Tencent, `libnqshield`/NetEase, `libkwssgmain`…), common analytics/ads/anti-cheat natives. This is pure zip-index reading (no binaries needed) and gives the Python workflow an instant limbic read — "look, the APK ships libsgmain, expect Guardsquare-tier RASP" — before a device is ever attached.
-- *Effort:* M (the tool skeleton + fallback chain are proven patterns; the table curation is the work).
-
-**E-NPM-4. New tool: `apk_diff`**
-- *Current:* every tool answers for one file at a time; "what changed between app 2.3.1 and 2.4.0?" has no first-class answer.
-- *Proposal:* `apk_diff(old_path, new_path)` — diffs manifest flags, exported components, permission sets, and re-runs the secret patterns on both and reports added/removed findings; optional `skip_secrets` for speed. Read-only, no new binary dependencies, direct answer to a question assessors actually ask on every version bump.
+- *Done:* enumerates every `lib/<abi>/*.so`, matches a ~30-entry `KNOWN_ANDROID_LIBS` table (packers/RASP/frameworks/SDKs/runtimes) and inspects ELF headers — class, machine, e_type, and the section-header table, where absence is itself a protection signal. Verified live on TiviMate (libdexprotector per ABI, correct ELF classes).
 - *Effort:* M.
 
-**E-NPM-5. Complete `android_api_extractor`'s endpoint story (the fix for F-NPM-5-OkHttp)**
+**E-NPM-4. New tool: `apk_diff` — *Current: landed*** — **Status: done (commit `11096c5`)**
+- *Current:* every tool answers for one file at a time; "what changed between app 2.3.1 and 2.4.0?" has no first-class answer.
+- *Done:* `apk_diff(old_path, new_path, skip_secrets?)` — identity/SDK levels, security flags, permission and exported-component deltas, native-library deltas by sha256, optional per-pattern secret deltas, archive inventory. Verified live against a rebuilt notesdemo variant.
+- *Effort:* M.
+
+**E-NPM-5. Complete `android_api_extractor`'s endpoint story (the fix for F-NPM-5-OkHttp)** — **Status: deferred (reason: not in the approved extension order for this round; the const-string harvest proposal stands as a follow-up, and the README wording already narrows the claim)**
 - *Current:* Retrofit annotations produce endpoints; the tool also claims OkHttp extraction but only collects field declarations, so the README example question ("What API endpoints does this APK call?") is answered partially.
 - *Proposal:* add a `const-string` harvest pass over the same smali folder the tool already walks (regex `https?://` in string constants, deduped, host-grouped) — no new dependencies, and it captures every base URL missed by missing Retrofit annotations. Optionally rename the field-reporting to "OkHttp client fields (detected)" so the description stops overclaiming.
 - *Effort:* S.
 
-**E-NPM-6. Test and packaging investments**
-- *Current:* 1 of 12 tools unit-tested; smoke script unrunnable on a fresh clone; no `npm test` script.
-- *Proposal:* (a) add `test/` unit tests for `patterns.ts` (`scanText`, `renderResults`), both secrets scanners (string-asset fixtures, no binaries needed), the frameworks matcher, and `safe-exec` path validation incl. `MOBILE_RE_MCP_ALLOWED_DIRS`; (b) ship tiny committed APK/IPA fixtures or generate them in CI so `test-tools.mjs` is hermetic, fix the 8/12 numbering and add the four missing tools; (c) add `"test": "npm run build && node --test test/*.test.mjs"`.
+**E-NPM-6. Test and packaging investments — *Current: mostly landed*** — **Status: partially done**
+- *Done (commit `90545cb` and the fixture-based suites):* `"test": "npm run build && node --test test/*.test.mjs"` is a first-class script; the smoke runner is honest about fixtures (F-NPM-1); hermetic unit tests cover the manifest parser (both aapt formats), zip caps, iOS extraction, native libraries, and apk_diff — 25 cases across 14 tools.
+- *Deferred (reason: pattern-table and safe-exec unit tests are partially redundant with the live fixture smokes; schedule them when the pattern tables next change):* dedicated `patterns.ts` (`scanText`/`renderResults`) and `MOBILE_RE_MCP_ALLOWED_DIRS` unit tests.
 - *Effort:* M.
 
-**E-NPM-7. Small consistency fixes**
-- One `min_length` default (8) for all strings-family tools.
-- `ios_google_services`: decode bplists during the rescan like `ios_secrets_scanner` already does (or document why not).
-- Remove the dead ternary, the pointless chmod, the `"simulator"` sentinel (return `{type:"simulator"}` shape instead).
-- Move `DexGuard` out of the iOS `KNOWN_FRAMEWORKS`; tighten the matcher to prefix-or-exact matches only.
-- Fix `DANGEROUS_PERMISSIONS` labels (rename the section header for non-runtime entries rather than reclassifying, keeping the triage utility).
-- Optional runtime hint on ENOENT under Windows ("apktool not resolvable — needs a real .exe").
+**E-NPM-7. Small consistency fixes — *Current: landed*** — **Status: done (commit `90545cb`, plus `cc3e59e` for the permissions header)**
+- *Done:* one `min_length` default (8); DexGuard out of the iOS table and prefix-or-exact matching; dead ternary removed; the chmod was already gone via F-NPM-3; Windows ENOENT hint at runtime; `DANGEROUS_PERMISSIONS` relabelled a triage list under a "Sensitive Permissions" header.
+- *Deferred (with reasons):* `ios_google_services` bplist rescan consistency (needs binary-plist fixtures) and the `ios_binary_strings` 40-char key regex noise (tightening risks missing real keys) — tracked under F-NPM-5.
 
 ---
 

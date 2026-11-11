@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-11-10
+
+This release is the rebuild pass documented in
+[docs/code-review-and-extensions.md](docs/code-review-and-extensions.md): every
+`[verified live]` finding fixed with before/after evidence, the npm server
+hardened against hostile archives, and five new tools.
+
+### Fixed (Python)
+- `manifest_parse`, `analyze_code`, `find_crypto_usage` and `find_urls` work again on the androguard 4.x that `[static]` installs — the exported-components logic is now derived from the parsed manifest (with explicit / intent-filter / pre-17 auto-export markers), the call-graph helpers tolerate every 3.x/4.x record shape, and `apk_analyze_full` reports per-stage status honestly instead of masking failures (F-PY-1).
+- `check_tools` reports what the handlers actually need: pip CLIs resolve through the interpreter-sibling fallback (`clitools.find_cli`), the SSH cracker named `medusa` no longer counts as the framework, and every entry says which MCP tools use it (F-PY-2).
+- The 8 built-in Frida scripts ship with the package again, each implementing the `recv('config')` protocol, and `frida_find_bytes` works on frida 17 (F-PY-3, plus the QuickJS `process` global fix, D-5).
+- Tool handlers no longer block the asyncio loop: stateless handlers run on worker threads, the three stateful classes keep their ordering on a dedicated pool (F-PY-4).
+- Script parameters travel as `{'type':'config', …}` after load instead of `str.replace` on magic source lines (F-PY-5).
+- Dead weight removed from the dependency list and the checks; housekeeping for `frida_memdump`'s dump directory, the HAR helper's deprecated `utcnow`, and `adb_shell`'s argument-model documentation (F-PY-6, F-PY-7, E-PY-9).
+
+### Fixed (npm)
+- Zip-bomb guard: inputs are capped at 2048 MB and single decompressed entries at 256 MB (`MOBILE_RE_MCP_MAX_FILE_MB` / `MOBILE_RE_MCP_MAX_ENTRY_MB`, `0` disables), checked before decompression on every APK/IPA read (F-NPM-4).
+- One shared iOS binary extractor and one shared scan-result merge replace three drifting copies each (F-NPM-3).
+- `apk_manifest_analyzer` uses the `aapt2` fallback it could already parse (F-NPM-2).
+- The smoke runner is honest about fixtures and coverage, `npm test` runs the hermetic suite, and the small consistency fixes landed: shared `min_length` default, prefix-only framework matching, DexGuard out of the iOS table, Windows ENOENT hint, dead code removal (F-NPM-1, F-NPM-5, E-NPM-7).
+
+### Added
+- **`quark_scan`** (PyPI): quark-engine behaviour scoring with keyword/score filters; also a best-effort stage of `apk_analyze_full` (E-PY-3).
+- **`frida_status`** (PyPI): frida version, devices, server responsiveness, session state — the "am I attached?" read (E-PY-7).
+- **`adb_ui_dump`** (PyPI): the current UI as structured elements via uiautomator (E-PY-8).
+- **`android_native_libraries`** (npm): every `lib/<abi>/*.so` with packer/RASP/framework fingerprinting and ELF section inspection (E-NPM-3).
+- **`apk_diff`** (npm): two builds side by side — identity, flags, permission/component deltas, native-library sha256 deltas, secret deltas (E-NPM-4).
+
+PyPI server: 58 tools. npm server: 14 tools.
+
 ## [1.2.3] - 2026-11-03
 
 ### Fixed

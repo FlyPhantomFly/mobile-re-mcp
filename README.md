@@ -7,7 +7,7 @@
 
 mobile-re-mcp is two MCP servers in one repo, for two halves of the same job.
 
-The **Python server**, published on PyPI as `mobile-re-mcp` (command `mobile-re-mcp-py`), is the live half and the larger of the two, with 56 tools. It drives adb, Frida, mitmproxy, apktool and jadx against a real Android device: decompile an app, hook it, read its traffic, patch it, sign it and install it again. It leads this README.
+The **Python server**, published on PyPI as `mobile-re-mcp` (command `mobile-re-mcp-py`), is the live half and the larger of the two, with 58 tools. It drives adb, Frida, mitmproxy, apktool and jadx against a real Android device: decompile an app, hook it, read its traffic, patch it, sign it and install it again. It leads this README.
 
 The **npm server**, published on npm as `mobile-re-mcp` (command `mobile-re-mcp`), is the file-reading half. It reads an Android APK or iOS IPA and reports what is inside — permissions, exported components, hardcoded secrets, Firebase config, entitlements, bundled SDKs — without ever running the app. It is described [further down](#the-npm-server).
 
@@ -19,7 +19,7 @@ You ask in plain language, the assistant calls the right tool, and the findings 
 
 ### What exactly it does
 
-`pip install "mobile-re-mcp[all]"` gives you an MCP server, started as `mobile-re-mcp-py`, that speaks MCP over stdio (or SSE on 127.0.0.1 with a bearer token) and exposes **56 tools over one Android target at a time**:
+`pip install "mobile-re-mcp[all]"` gives you an MCP server, started as `mobile-re-mcp-py`, that speaks MCP over stdio (or SSE on 127.0.0.1 with a bearer token) and exposes **58 tools over one Android target at a time**:
 
 - **Static work on the APK file itself** — apktool and jadx decompilation, ripgrep searches across the decompiled folder, androguard manifest parsing and bytecode cross-references, apkid packer/obfuscator identification, apkleaks secret scanning, quark-engine behaviour rules (`quark_scan`), and an orchestrator (`apk_analyze_full`) that runs all of those in one call and scores the protection tier.
 - **Dynamic work on a running app** — spawn or attach a process with Frida, inject JavaScript, stream script output back, hook SSL pinning, dump and search process memory, trace storage, crypto and network calls from a built-in script collection you can extend with your own scripts.
