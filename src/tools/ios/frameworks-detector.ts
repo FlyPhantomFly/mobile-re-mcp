@@ -1,7 +1,7 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import * as fs from "fs";
 import { checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip } from "../shared/zip.js";
 
 interface FrameworkInfo {
   category: string;
@@ -123,13 +123,18 @@ export const iosFrameworksDetector = {
     if (!ipa.ok) return errorResult(ipa.error);
     const ipaPath = ipa.path;
 
-    const report = buildReport(ipaPath);
+    let report: string;
+    try {
+      report = buildReport(ipaPath);
+    } catch (e) {
+      return { content: [{ type: "text" as const, text: `Error opening IPA: ${e instanceof Error ? e.message : String(e)}` }] };
+    }
     return { content: [{ type: "text" as const, text: report }] };
   },
 };
 
 function buildReport(ipaPath: string): string {
-  const zip = new AdmZip(ipaPath);
+  const zip = openZip(ipaPath);
   const entries = zip.getEntries();
 
   // Collect unique framework/dylib names from Frameworks/ dir

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import { run, checkInputFile, checkInputDir, errorResult } from "../shared/safe-exec.js";
+import { openZip, requireEntryData } from "../shared/zip.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -31,9 +31,9 @@ export const androidGoogleServices = {
       smaliFolder = dir.path;
     }
 
-    let zip: AdmZip;
+    let zip: ReturnType<typeof openZip>;
     try {
-      zip = new AdmZip(apk.path);
+      zip = openZip(apk.path);
     } catch (e) {
       return { content: [{ type: "text" as const, text: `Error opening APK: ${e instanceof Error ? e.message : String(e)}` }] };
     }
@@ -48,7 +48,7 @@ export const androidGoogleServices = {
     if (gsEntry) {
       lines.push(`--- google-services.json ---`);
       try {
-        const json = JSON.parse(gsEntry.getData().toString("utf-8")) as Record<string, unknown>;
+        const json = JSON.parse(requireEntryData(gsEntry).toString("utf-8")) as Record<string, unknown>;
         const proj = json["project_info"] as Record<string, string> | undefined;
         if (proj) {
           if (proj["project_number"]) lines.push(`  Project Number : ${proj["project_number"]}`);
@@ -115,7 +115,7 @@ export const androidGoogleServices = {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "arsc-"));
       try {
         const tmpFile = path.join(tmpDir, "resources.arsc");
-        fs.writeFileSync(tmpFile, arscEntry.getData());
+        fs.writeFileSync(tmpFile, requireEntryData(arscEntry));
         const raw = run("strings", ["-a", "-n", "8", tmpFile], { maxBuffer: 50 * 1024 * 1024 });
         const results = scanText(raw, GOOGLE_PATTERNS);
         if (results.size > 0) {

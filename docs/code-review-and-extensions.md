@@ -109,9 +109,11 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 `extractBinary` is copy-pasted three times with **drifting resource-exclusion lists** (entitlements-checker.ts vs binary-strings.ts vs secrets-scanner.ts — one ignores `lproj`/`storyboard`, another `json`/`dylib`), so the same IPA can yield different binaries to different tools. `merge()` is likewise duplicated in both secret scanners, and unchanged-file dedup uses `includes()` (O(n²)). One shared helper fixes all three.
 
-### F-NPM-4. No decompression-size limits (zip-bomb surface)
+### F-NPM-4. No decompression-size limits (zip-bomb surface) — **[code]** — **Status: fixed**
 
-`entry.getData()` (adm-zip) fully decompresses before any size check — for DEX, plists, assets, framework binaries. maxBuffer only caps `strings` output. A crafted, small, highly-compressed IPA can OOM the process. There is also no cap on the input APK/IPA file size itself. Mitigation is cheap: check `entry.header.compressedSize/uncompressedSize` before reading and skip/abort above a cap.
+`entry.getData()` (adm-zip) fully decompresses before any size check — for DEX, plists, assets, framework binaries. maxBuffer only caps `strings` output. A crafted, small, highly-compressed IPA can OOM the process. There is also no cap on the input APK/IPA file size itself.
+
+*Fix:* `src/tools/shared/zip.ts` is the single zip gateway: `openZip` (checks the input against `MOBILE_RE_MCP_MAX_FILE_MB`, default 2048, then opens with a normalized error — also fixing the one unprotected `new AdmZip` in frameworks-detector), `readEntry` (checks `header.compressedSize`/`header.size` against `MOBILE_RE_MCP_MAX_ENTRY_MB`, default 256, *before* decompressing), `requireEntryData` for single-entry callers, and a `[skipped: …]` placeholder for scan loops. `0` disables a cap. Every APK/IPA consumer is wired through it. Verified live: a 2 KB APK whose `assets/big.json` decompresses to 2 MB is reported as `[skipped: entry 'assets/big.json' declares 2.0 MB uncompressed, above the 1 MB cap …]` with the rest of the scan intact; a 2 MB input with `MOBILE_RE_MCP_MAX_FILE_MB=1` fails with `input file is 2.0 MB, above the 1 MB cap`. Tests: `test/zip-limits.test.mjs` (6 cases).
 
 ### F-NPM-5. Other smaller items
 

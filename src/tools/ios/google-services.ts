@@ -1,7 +1,7 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import * as fs from "fs";
 import { checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip, readEntry, requireEntryData, skippedPlaceholder } from "../shared/zip.js";
 import { GOOGLE_PATTERNS, scanText, renderResults } from "../shared/patterns.js";
 import { parsePlistBuffer } from "./manifest-analyzer.js";
 
@@ -20,9 +20,9 @@ export const iosGoogleServices = {
     if (!ipa.ok) return errorResult(ipa.error);
     const ipaPath = ipa.path;
 
-    let zip: AdmZip;
+    let zip: ReturnType<typeof openZip>;
     try {
-      zip = new AdmZip(ipaPath);
+      zip = openZip(ipaPath);
     } catch (e) {
       return { content: [{ type: "text" as const, text: `Error opening IPA: ${e instanceof Error ? e.message : String(e)}` }] };
     }
@@ -38,7 +38,7 @@ export const iosGoogleServices = {
     if (gsEntry) {
       lines.push(`  Found: ${gsEntry.entryName}\n`);
       try {
-        const plist = parsePlistBuffer(gsEntry.getData()) as Record<string, unknown>;
+        const plist = parsePlistBuffer(requireEntryData(gsEntry)) as Record<string, unknown>;
         const FIELDS: [string, string][] = [
           ["BUNDLE_ID",          "Bundle ID"],
           ["PROJECT_ID",         "Project ID"],
@@ -68,6 +68,7 @@ export const iosGoogleServices = {
     // ── 2. Pattern scan across text plist and JSON files ─────────────────────
     let scannedText = "";
     let scannedCount = 0;
+    const sizeSkips: string[] = [];
 
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
@@ -79,7 +80,13 @@ export const iosGoogleServices = {
       if (!isText && !isPlist) continue;
 
       try {
-        const data = entry.getData();
+        const read = readEntry(entry);
+        if (!read.ok) {
+          // oversize/unreadable resource — note it and move on
+          sizeSkips.push(read.reason);
+          continue;
+        }
+        const data = read.data;
         if (isPlist) {
           const text = data.toString("utf-8");
           if (text.startsWith("bplist")) continue; // skip binary plists
@@ -101,6 +108,9 @@ export const iosGoogleServices = {
         lines.push(`  No additional Google patterns found`);
       }
       lines.push(``);
+    }
+    for (const reason of sizeSkips) {
+      lines.push(skippedPlaceholder(reason));
     }
 
     return { content: [{ type: "text" as const, text: lines.join("\n") }] };

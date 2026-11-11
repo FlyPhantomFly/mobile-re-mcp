@@ -1,6 +1,6 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import { run, checkInputFile, checkInputDir, errorResult } from "../shared/safe-exec.js";
+import { openZip, readEntry, skippedPlaceholder } from "../shared/zip.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -45,9 +45,9 @@ export const androidSecretsScanner = {
     const minLen = Number.isInteger(args.min_length) ? (args.min_length as number) : 8;
     if (minLen < 4 || minLen > 100) return errorResult("min_length must be an integer between 4 and 100.");
 
-    let zip: AdmZip;
+    let zip: ReturnType<typeof openZip>;
     try {
-      zip = new AdmZip(apk.path);
+      zip = openZip(apk.path);
     } catch (e) {
       return { content: [{ type: "text" as const, text: `Error opening APK: ${e instanceof Error ? e.message : String(e)}` }] };
     }
@@ -102,8 +102,13 @@ export const androidSecretsScanner = {
           (e) => !e.isDirectory && /^classes\d*\.dex$/.test(e.entryName)
         );
         for (const entry of dexEntries) {
+          const read = readEntry(entry);
+          if (!read.ok) {
+            lines.push(`  ${skippedPlaceholder(read.reason)}`);
+            continue;
+          }
           const tmp = path.join(tmpDir, entry.entryName);
-          fs.writeFileSync(tmp, entry.getData());
+          fs.writeFileSync(tmp, read.data);
           try {
             const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 100 * 1024 * 1024 });
             merge(scanText(out, SECRET_PATTERNS));
@@ -114,13 +119,18 @@ export const androidSecretsScanner = {
         // resources.arsc
         const arscEntry = zip.getEntry("resources.arsc");
         if (arscEntry) {
-          const tmp = path.join(tmpDir, "resources.arsc");
-          fs.writeFileSync(tmp, arscEntry.getData());
-          try {
-            const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 50 * 1024 * 1024 });
-            merge(scanText(out, SECRET_PATTERNS));
-          } catch { /* strings failed */ }
-          lines.push(`  Scanned: resources.arsc`);
+          const arscRead = readEntry(arscEntry);
+          if (!arscRead.ok) {
+            lines.push(`  ${skippedPlaceholder(arscRead.reason)}`);
+          } else {
+            const tmp = path.join(tmpDir, "resources.arsc");
+            fs.writeFileSync(tmp, arscRead.data);
+            try {
+              const out = run("strings", ["-a", "-n", String(minLen), tmp], { maxBuffer: 50 * 1024 * 1024 });
+              merge(scanText(out, SECRET_PATTERNS));
+            } catch { /* strings failed */ }
+            lines.push(`  Scanned: resources.arsc`);
+          }
         }
 
         // Text assets inside ZIP
@@ -130,8 +140,13 @@ export const androidSecretsScanner = {
           if (!entry.entryName.startsWith("assets/")) continue;
           if (!TEXT_ASSET_EXTENSIONS.some((ext) => entry.entryName.endsWith(ext))) continue;
           try {
-            merge(scanText(entry.getData().toString("utf-8"), SECRET_PATTERNS));
-            assetCount++;
+            const read = readEntry(entry);
+            if (read.ok) {
+              merge(scanText(read.data.toString("utf-8"), SECRET_PATTERNS));
+              assetCount++;
+            } else {
+              lines.push(`  ${skippedPlaceholder(read.reason)}`);
+            }
           } catch { /* skip */ }
         }
         if (assetCount > 0) lines.push(`  Scanned: ${assetCount} text asset(s)`);

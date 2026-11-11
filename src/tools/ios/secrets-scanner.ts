@@ -1,6 +1,7 @@
 import { z } from "zod";
 import AdmZip from "adm-zip";
 import { run, escapeRegExp, checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip, readEntry, requireEntryData, skippedPlaceholder } from "../shared/zip.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -32,9 +33,9 @@ export const iosSecretsScanner = {
     const minLen = Number.isInteger(args.min_length) ? (args.min_length as number) : 8;
     if (minLen < 4 || minLen > 100) return errorResult("min_length must be an integer between 4 and 100.");
 
-    let zip: AdmZip;
+    let zip: ReturnType<typeof openZip>;
     try {
-      zip = new AdmZip(ipaPath);
+      zip = openZip(ipaPath);
     } catch (e) {
       return { content: [{ type: "text" as const, text: `Error opening IPA: ${e instanceof Error ? e.message : String(e)}` }] };
     }
@@ -58,12 +59,15 @@ export const iosSecretsScanner = {
     // ── Layer 1: text resource files ─────────────────────────────────────────
     let resourceText = "";
     let resourceCount = 0;
+    const sizeSkips: string[] = [];
 
     for (const entry of zip.getEntries()) {
       if (entry.isDirectory) continue;
       try {
         if (entry.entryName.endsWith(".plist")) {
-          const data = entry.getData();
+          const read = readEntry(entry);
+          if (!read.ok) { sizeSkips.push(read.reason); continue; }
+          const data = read.data;
           const text = data.toString("utf-8");
           if (text.startsWith("bplist")) {
             // binary plist — flatten values to text
@@ -77,13 +81,18 @@ export const iosSecretsScanner = {
         }
         const TEXT_EXT = [".json", ".xml", ".strings", ".txt", ".yaml", ".yml", ".properties"];
         if (!TEXT_EXT.some((ext) => entry.entryName.endsWith(ext))) continue;
-        resourceText += entry.getData().toString("utf-8") + "\n";
+        const read = readEntry(entry);
+        if (!read.ok) { sizeSkips.push(read.reason); continue; }
+        resourceText += read.data.toString("utf-8") + "\n";
         resourceCount++;
       } catch { /* skip unreadable */ }
     }
 
     lines.push(`--- Layer 1: Resource Files (${resourceCount} file(s)) ---`);
     merge(scanText(resourceText, SECRET_PATTERNS));
+    for (const reason of sizeSkips) {
+      lines.push(`  ${skippedPlaceholder(reason)}`);
+    }
 
     // ── Layer 2: app binary via strings ──────────────────────────────────────
     const binaryEntry = findBinary(zip);
@@ -171,7 +180,7 @@ function findBinary(zip: AdmZip): Buffer | null {
   let executableName: string | null = null;
   if (plistEntry) {
     try {
-      const parsed = parsePlistBuffer(plistEntry.getData());
+      const parsed = parsePlistBuffer(requireEntryData(plistEntry));
       executableName = parsed["CFBundleExecutable"] as string | null;
     } catch { /* ignore */ }
   }
@@ -186,7 +195,7 @@ function findBinary(zip: AdmZip): Buffer | null {
     );
   });
 
-  return binaryEntry ? binaryEntry.getData() : null;
+  return binaryEntry ? requireEntryData(binaryEntry) : null;
 }
 
 function flattenValues(obj: unknown): string {

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import plist from "plist";
 import { run, checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip, requireEntryData } from "../shared/zip.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -41,7 +41,7 @@ export const iosManifestAnalyzer = {
 };
 
 export function extractInfoPlist(ipaPath: string): Record<string, unknown> {
-  const zip = new AdmZip(ipaPath);
+  const zip = openZip(ipaPath);
   const entries = zip.getEntries();
 
   // Find Info.plist inside Payload/<AppName>.app/Info.plist
@@ -53,7 +53,7 @@ export function extractInfoPlist(ipaPath: string): Record<string, unknown> {
     throw new Error("Info.plist not found inside IPA");
   }
 
-  const data = plistEntry.getData();
+  const data = requireEntryData(plistEntry);
   return parsePlistBuffer(data);
 }
 

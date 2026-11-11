@@ -1,7 +1,7 @@
 import { z } from "zod";
-import AdmZip from "adm-zip";
 import plist from "plist";
 import { run, escapeRegExp, checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip, requireEntryData } from "../shared/zip.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -89,7 +89,7 @@ export const iosEntitlementsChecker = {
 };
 
 function extractBinary(ipaPath: string, outDir: string): string | null {
-  const zip = new AdmZip(ipaPath);
+  const zip = openZip(ipaPath);
   const entries = zip.getEntries();
 
   // Find Info.plist to get CFBundleExecutable
@@ -100,7 +100,7 @@ function extractBinary(ipaPath: string, outDir: string): string | null {
   let executableName: string | null = null;
   if (plistEntry) {
     try {
-      const parsed = parsePlistBuffer(plistEntry.getData());
+      const parsed = parsePlistBuffer(requireEntryData(plistEntry));
       executableName = parsed["CFBundleExecutable"] as string | null;
     } catch {
       // ignore
@@ -123,7 +123,7 @@ function extractBinary(ipaPath: string, outDir: string): string | null {
   if (!binaryEntry) return null;
 
   const outPath = path.join(outDir, "binary");
-  fs.writeFileSync(outPath, binaryEntry.getData());
+  fs.writeFileSync(outPath, requireEntryData(binaryEntry));
   fs.chmodSync(outPath, 0o755);
   return outPath;
 }

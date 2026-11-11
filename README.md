@@ -369,6 +369,7 @@ Some tools take extra options. `smali_folder` lets the Android tools reuse an ex
 - External programs are started with an argument array, never through a shell, so a crafted path cannot inject a command.
 - The file has to exist, be an absolute path and look like a ZIP (`.apk` or `.ipa`).
 - To limit where the server may read, set `MOBILE_RE_MCP_ALLOWED_DIRS` (separate folders with `:`, or `;` on Windows). For example, in the Claude Desktop entry add `"env": { "MOBILE_RE_MCP_ALLOWED_DIRS": "/home/me/apks" }`.
+- Zip-bomb guard: inputs are capped at 2048 MB and any single decompressed entry at 256 MB (`MOBILE_RE_MCP_MAX_FILE_MB` / `MOBILE_RE_MCP_MAX_ENTRY_MB`, `0` disables a cap). A crafted 2 KB APK that expands to 2 GB can no longer OOM the server — oversized entries are reported as `[skipped: …]` where the tool can continue, and oversized inputs fail with a clear message.
 - An untrusted app is hostile input for `apktool`, `aapt` and `strings`. Keep them updated, and for samples you do not trust, run the server in a VM or container.
 - Findings, including any secrets that were found, go to your AI client and so to its model provider.
 
