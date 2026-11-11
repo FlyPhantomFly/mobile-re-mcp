@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { run, escapeRegExp, checkInputFile, errorResult } from "../shared/safe-exec.js";
-import { openZip, requireEntryData } from "../shared/zip.js";
+import { run, checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip } from "../shared/zip.js";
+import { writeBinary } from "./extract-binary.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -92,37 +93,7 @@ export const iosBinaryStrings = {
 
 function extractBinary(ipaPath: string, outDir: string): string | null {
   const zip = openZip(ipaPath);
-  const entries = zip.getEntries();
-
-  const plistEntry = entries.find((e) =>
-    /^Payload\/[^/]+\.app\/Info\.plist$/.test(e.entryName)
-  );
-
-  let executableName: string | null = null;
-  if (plistEntry) {
-    try {
-      const parsed = parsePlistBuffer(requireEntryData(plistEntry));
-      executableName = parsed["CFBundleExecutable"] as string | null;
-    } catch {
-      // ignore
-    }
-  }
-
-  const binaryEntry = entries.find((e) => {
-    if (executableName) {
-      return new RegExp(`^Payload/[^/]+\\.app/${escapeRegExp(executableName)}$`).test(e.entryName);
-    }
-    return (
-      /^Payload\/[^/]+\.app\/[^/]+$/.test(e.entryName) &&
-      !e.entryName.match(/\.(plist|nib|car|strings|png|jpg|lproj|storyboard)$/)
-    );
-  });
-
-  if (!binaryEntry) return null;
-
-  const outPath = path.join(outDir, "binary");
-  fs.writeFileSync(outPath, requireEntryData(binaryEntry));
-  return outPath;
+  return writeBinary(zip, outDir);
 }
 
 // Patterns for filtering

@@ -1,12 +1,14 @@
 import { z } from "zod";
 import AdmZip from "adm-zip";
-import { run, escapeRegExp, checkInputFile, errorResult } from "../shared/safe-exec.js";
-import { openZip, readEntry, requireEntryData, skippedPlaceholder } from "../shared/zip.js";
+import { run, checkInputFile, errorResult } from "../shared/safe-exec.js";
+import { openZip, readEntry, skippedPlaceholder } from "../shared/zip.js";
+import { SECRET_PATTERNS, scanText, renderResults, mergeScanResults } from "../shared/patterns.js";
+import type { ScanResults } from "../shared/patterns.js";
+import { parsePlistBuffer } from "./manifest-analyzer.js";
+import { readBinary } from "./extract-binary.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { SECRET_PATTERNS, scanText, renderResults } from "../shared/patterns.js";
-import { parsePlistBuffer } from "./manifest-analyzer.js";
 
 export const iosSecretsScanner = {
   description:
@@ -41,20 +43,9 @@ export const iosSecretsScanner = {
     }
 
     const lines: string[] = [`=== iOS Secrets Scanner ===\n`];
-    const allResults = new Map<string, { def: (typeof SECRET_PATTERNS)[0]; matches: string[] }>();
+    const allResults: ScanResults = new Map();
 
-    const merge = (results: ReturnType<typeof scanText>) => {
-      for (const [name, entry] of results) {
-        const existing = allResults.get(name);
-        if (existing) {
-          for (const m of entry.matches) {
-            if (!existing.matches.includes(m)) existing.matches.push(m);
-          }
-        } else {
-          allResults.set(name, { ...entry });
-        }
-      }
-    };
+    const merge = (results: ScanResults) => mergeScanResults(allResults, results);
 
     // ── Layer 1: text resource files ─────────────────────────────────────────
     let resourceText = "";
@@ -171,31 +162,7 @@ export const iosSecretsScanner = {
 };
 
 function findBinary(zip: AdmZip): Buffer | null {
-  const entries = zip.getEntries();
-
-  const plistEntry = entries.find((e) =>
-    /^Payload\/[^/]+\.app\/Info\.plist$/.test(e.entryName)
-  );
-
-  let executableName: string | null = null;
-  if (plistEntry) {
-    try {
-      const parsed = parsePlistBuffer(requireEntryData(plistEntry));
-      executableName = parsed["CFBundleExecutable"] as string | null;
-    } catch { /* ignore */ }
-  }
-
-  const binaryEntry = entries.find((e) => {
-    if (executableName) {
-      return new RegExp(`^Payload/[^/]+\\.app/${escapeRegExp(executableName)}$`).test(e.entryName);
-    }
-    return (
-      /^Payload\/[^/]+\.app\/[^/]+$/.test(e.entryName) &&
-      !e.entryName.match(/\.(plist|nib|car|strings|png|jpg|json|dylib)$/)
-    );
-  });
-
-  return binaryEntry ? requireEntryData(binaryEntry) : null;
+  return readBinary(zip);
 }
 
 function flattenValues(obj: unknown): string {

@@ -105,9 +105,11 @@ Consequences beyond the library itself: `frida_find_bytes` **depends on the miss
 
 `apk_permissions_checker` tries `aapt` → `aapt2` → `apktool`; `apk_manifest_analyzer` tries `aapt` → apktool only, even though `parseManifest()` handles the aapt2 tree format and the repo ships the `test/fixtures/aapt2-xmltree.txt` proving it. On aapt2-only machines the manifest tool always pays the apktool cost.
 
-### F-NPM-3. Triple-duplicated iOS binary-extraction logic
+### F-NPM-3. Triple-duplicated iOS binary-extraction logic — **[code]** — **Status: fixed**
 
 `extractBinary` is copy-pasted three times with **drifting resource-exclusion lists** (entitlements-checker.ts vs binary-strings.ts vs secrets-scanner.ts — one ignores `lproj`/`storyboard`, another `json`/`dylib`), so the same IPA can yield different binaries to different tools. `merge()` is likewise duplicated in both secret scanners, and unchanged-file dedup uses `includes()` (O(n²)). One shared helper fixes all three.
+
+*Fix:* `src/tools/ios/extract-binary.ts` is the single implementation — `resolveBinaryEntry` (Info.plist `CFBundleExecutable`, else the one extension-less root file of the `.app`, against the **union** of the three drifted exclusion lists), `writeBinary` (used by binary-strings + entitlements-checker; the pointless `chmodSync(0o755)` disappears with it) and `readBinary` (secrets-scanner). `merge()` became `mergeScanResults` in `shared/patterns.ts`, used by both secret scanners, with Set-based dedup instead of `includes()`. Tests: `test/ios-extract.test.mjs` (6 cases: named binary, fallback, union-list exclusions, null case, write/read round-trip, merge dedup).
 
 ### F-NPM-4. No decompression-size limits (zip-bomb surface) — **[code]** — **Status: fixed**
 

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { run, checkInputFile, checkInputDir, errorResult } from "../shared/safe-exec.js";
 import { openZip, readEntry, skippedPlaceholder } from "../shared/zip.js";
+import { SECRET_PATTERNS, scanText, renderResults, mergeScanResults } from "../shared/patterns.js";
+import type { ScanResults } from "../shared/patterns.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { SECRET_PATTERNS, scanText, renderResults } from "../shared/patterns.js";
 
 const TEXT_ASSET_EXTENSIONS = [".json", ".xml", ".txt", ".properties", ".yaml", ".yml", ".plist"];
 
@@ -53,20 +54,9 @@ export const androidSecretsScanner = {
     }
 
     const lines: string[] = [`=== Android Secrets Scanner ===\n`];
-    const allResults = new Map<string, { def: (typeof SECRET_PATTERNS)[0]; matches: string[] }>();
+    const allResults: ScanResults = new Map();
 
-    const merge = (results: ReturnType<typeof scanText>) => {
-      for (const [name, entry] of results) {
-        const existing = allResults.get(name);
-        if (existing) {
-          for (const m of entry.matches) {
-            if (!existing.matches.includes(m)) existing.matches.push(m);
-          }
-        } else {
-          allResults.set(name, { ...entry });
-        }
-      }
-    };
+    const merge = (results: ScanResults) => mergeScanResults(allResults, results);
 
     if (smaliFolder) {
       // ── smali_folder path: plain text files ──────────────────────────────

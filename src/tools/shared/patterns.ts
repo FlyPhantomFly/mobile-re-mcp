@@ -168,3 +168,30 @@ export function renderResults(
   }
   return lines;
 }
+
+export type ScanResults = Map<string, { def: PatternDef; matches: string[] }>;
+
+/**
+ * Merge *results* into *target*, deduplicating matches.
+ *
+ * Used by the Android and iOS secret scanners, which previously carried
+ * two drifted copies of this closure. Deduplication is Set-based, not the
+ * old O(n²) includes() over a growing array.
+ */
+export function mergeScanResults(target: ScanResults, results: ScanResults): void {
+  for (const [name, entry] of results) {
+    const existing = target.get(name);
+    if (existing) {
+      const seen = new Set(existing.matches);
+      for (const m of entry.matches) {
+        if (!seen.has(m)) {
+          existing.matches.push(m);
+          seen.add(m);
+        }
+      }
+    } else {
+      target.set(name, { def: entry.def, matches: [...entry.matches] });
+    }
+  }
+}
+
