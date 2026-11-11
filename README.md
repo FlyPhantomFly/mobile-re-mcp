@@ -239,6 +239,7 @@ Eight bypass/monitor scripts ship with the package (`ssl_pinning_universal`, `ro
 - `MOBILE_RE_MCP_ALLOWED_DIRS` — folders (separated by `:`) that all file arguments must stay inside
 - `MOBILE_RE_MCP_DISABLE_TOOLS` — comma-separated tools to switch off, e.g. `adb_shell,adb_push,adb_pull`
 - `MOBILE_RE_MCP_ALLOW_INSTALL=1` — the only way `install_tool` becomes callable over MCP (`--setup` always works)
+- `MOBILE_RE_MCP_FRIDA_ENDPOINT=127.0.0.1:31337` — connect every `frida_*` tool to a remote frida-server instead of USB discovery. For a stealth setup (renamed server binary on a non-default port, reached via `adb forward tcp:31337 tcp:31337`) USB discovery finds nothing — this is the switch that makes the dynamic tools work against it.
 
 ### Staying safe
 

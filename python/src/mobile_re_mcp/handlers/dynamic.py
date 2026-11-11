@@ -18,6 +18,7 @@ Tools (new — gap #3):
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import shutil
 import subprocess
@@ -41,6 +42,28 @@ _TOOLS_DIR = tools_dir()
 
 def _check_tool(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def frida_endpoint() -> str | None:
+    """The configured remote frida endpoint, if any (stealth-server setups).
+
+    A frida-server running under a non-default name on a non-default port
+    (renamed binary listening on 0.0.0.0:31337, reached via
+    `adb forward tcp:31337 tcp:31337`) is invisible to frida's USB
+    discovery. Set MOBILE_RE_MCP_FRIDA_ENDPOINT=127.0.0.1:31337 and every
+    frida_* tool connects through that endpoint instead of USB.
+    """
+    return os.environ.get("MOBILE_RE_MCP_FRIDA_ENDPOINT", "").strip() or None
+
+
+def _get_frida_device(timeout: int = 10):
+    """A frida device: the configured endpoint, else USB discovery."""
+    import frida  # type: ignore[import]
+
+    endpoint = frida_endpoint()
+    if endpoint:
+        return frida.get_device_manager().add_remote_device(endpoint)
+    return frida.get_usb_device(timeout=timeout)
 
 
 def _missing(tool: str, hint: str = "") -> dict:
@@ -77,8 +100,8 @@ class DynamicHandler:
     def frida_spawn(self, args: dict) -> dict:
         """Spawn an app with Frida and optionally inject a script."""
         try:
-            import frida  # type: ignore[import]
-        except ImportError:
+            import frida  # noqa: F401 — availability check; used via _get_frida_device
+        except Exception:  # noqa: BLE001 — ImportError or a broken install
             return _missing("frida", "pip install frida")
 
         package = args.get("package", "")
@@ -86,7 +109,7 @@ class DynamicHandler:
         script_config = args.get("config") or None
 
         try:
-            device = frida.get_usb_device(timeout=10)
+            device = _get_frida_device()
             pid = device.spawn([package])
             session = device.attach(pid)
             self._frida_device = device
@@ -112,16 +135,41 @@ class DynamicHandler:
     def frida_attach(self, args: dict) -> dict:
         """Attach to a running process."""
         try:
-            import frida  # type: ignore[import]
-        except ImportError:
+            import frida  # noqa: F401 — availability check; used via _get_frida_device
+        except Exception:  # noqa: BLE001 — ImportError or a broken install
             return _missing("frida")
 
         package = args.get("package", "")
         script_src = args.get("script", "")
         script_config = args.get("config") or None
         try:
-            device = frida.get_usb_device(timeout=10)
-            session = device.attach(package)
+            device = _get_frida_device()
+            try:
+                session = device.attach(package)
+            except Exception:  # noqa: BLE001 — D-6: fall through to the id→pid map
+                # frida's attach-by-name matches the process *name* (often
+                # the app label, e.g. "Termux:API"), not the package
+                # identifier ("com.termux.api"). Map identifier → pid via
+                # enumerate_applications, then attach by pid.
+                pid = None
+                try:
+                    for app in device.enumerate_applications():
+                        if app.identifier == package and app.pid:
+                            pid = app.pid
+                            break
+                except Exception:  # noqa: BLE001 — enumerate may be blocked
+                    pass
+                if pid is None:
+                    try:
+                        for proc in device.enumerate_processes():
+                            if proc.name == package:
+                                pid = proc.pid
+                                break
+                    except Exception:  # noqa: BLE001
+                        pass
+                if pid is None:
+                    raise
+                session = device.attach(pid)
             self._frida_device = device
             self._frida_session = session
             self._attached_package = package
@@ -219,9 +267,13 @@ class DynamicHandler:
                 break
         info["usb_device"] = usb
 
-        if usb is not None:
+        endpoint = frida_endpoint()
+        if endpoint:
+            info["frida_endpoint"] = endpoint
+
+        if usb is not None or endpoint:
             try:
-                device = frida.get_usb_device(timeout=5)
+                device = _get_frida_device(timeout=5)
                 # A single cheap RPC proves frida-server is alive and
                 # answering; enumerate_processes would be much heavier.
                 front = device.get_frontmost_application()
@@ -401,10 +453,10 @@ class DynamicHandler:
                 keepalive_interval=-1,
             )
         except Exception:  # noqa: BLE001
-            # Fall back to standard USB device (hluda may still be on standard adb forward)
+            # Fall back to the standard device discovery (hluda may still be
+            # reachable over USB or via the configured endpoint).
             try:
-                import frida as frida2  # type: ignore[import]
-                device = frida2.get_usb_device(timeout=10)
+                device = _get_frida_device(timeout=10)
             except Exception as exc2:  # noqa: BLE001
                 return {"status": "error", "tool": "frida_hluda", "error": str(exc2)}
 
@@ -550,10 +602,13 @@ class DynamicHandler:
     # =========================================================================
 
     def frida_memdump(self, args: dict) -> dict:
-        """Dump all readable memory regions from the running process.
+        """Dump readable memory regions from the running process to disk.
 
-        Uses the built-in memory_scan script pattern; does NOT require
-        fridump binary — works via the injected Frida session.
+        Does NOT require the fridump binary — works via the injected Frida
+        session. Ranges larger than max_range_mb (default 32) are skipped:
+        reading a multi-GB GPU/ashmem mapping into the target's own memory
+        triggers the Android low-memory killer, which kills the session
+        ("the connection is closed") — seen live on a rooted device.
         """
         if self._frida_session is None:
             return {"status": "error", "tool": "frida_memdump",
@@ -566,29 +621,39 @@ class DynamicHandler:
         output_dir = Path(args.get("output_dir", str(default_dir)))
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        dump_script = r"""
+        try:
+            max_range_mb = max(1, int(args.get("max_range_mb", 32)))
+        except (TypeError, ValueError):
+            max_range_mb = 32
+        max_range_bytes = max_range_mb * 1024 * 1024
+
+        dump_script = f"""
+var MAX_RANGE = {max_range_bytes};
 var ranges = Process.enumerateRanges('rw-');
+var skipped = 0;
 var results = [];
-ranges.forEach(function(range) {
-    try {
+ranges.forEach(function(range) {{
+    if (range.size > MAX_RANGE) {{ skipped++; return; }}
+    try {{
         var data = range.base.readByteArray(range.size);
-        if (data) {
-            send({
+        if (data) {{
+            send({{
                 type: 'range',
                 base: range.base.toString(),
                 size: range.size,
-                module: (function(){
-                    try { var m = Process.findModuleByAddress(range.base); return m ? m.name : ''; }
-                    catch(_){ return ''; }
-                })()
-            }, data);
-        }
-    } catch(_) {}
-});
-send({type: 'done', total_ranges: ranges.length});
+                module: (function(){{
+                    try {{ var m = Process.findModuleByAddress(range.base); return m ? m.name : ''; }}
+                    catch(_){{ return ''; }}
+                }})()
+            }}, data);
+        }}
+    }} catch(_) {{}}
+}});
+send({{type: 'done', total_ranges: ranges.length, skipped_large: skipped}});
 """
 
         ranges_written: list[dict] = []
+        skipped_summary: dict = {}
         done = threading.Event()
 
         def on_message(msg: dict, data: Any) -> None:
@@ -612,6 +677,10 @@ send({type: 'done', total_ranges: ranges.length});
                 except Exception:  # noqa: BLE001
                     pass
             elif ptype == "done":
+                skipped_summary.update(
+                    total_ranges=payload.get("total_ranges", 0),
+                    skipped_large=payload.get("skipped_large", 0),
+                )
                 done.set()
 
         try:
@@ -631,6 +700,9 @@ send({type: 'done', total_ranges: ranges.length});
                 "output_dir": str(output_dir),
                 "ranges_written": len(ranges_written),
                 "total_bytes": total_bytes,
+                "total_ranges": skipped_summary.get("total_ranges", len(ranges_written)),
+                "skipped_large": skipped_summary.get("skipped_large", 0),
+                "max_range_mb": max_range_mb,
                 "ranges": ranges_written,
             },
         }

@@ -19,6 +19,7 @@ hardened against hostile archives, and five new tools.
 - Tool handlers no longer block the asyncio loop: stateless handlers run on worker threads, the three stateful classes keep their ordering on a dedicated pool (F-PY-4).
 - Script parameters travel as `{'type':'config', …}` after load instead of `str.replace` on magic source lines (F-PY-5).
 - Dead weight removed from the dependency list and the checks; housekeeping for `frida_memdump`'s dump directory, the HAR helper's deprecated `utcnow`, and `adb_shell`'s argument-model documentation (F-PY-6, F-PY-7, E-PY-9).
+- Rooted-device round: `frida_attach` works by package identifier even when frida only knows the app label (D-6); `frida_memdump` no longer OOM-kills the target by reading multi-GB ranges — a per-range cap (`max_range_mb`, default 32) with the skips reported (D-7); and `MOBILE_RE_MCP_FRIDA_ENDPOINT` routes every `frida_*` tool to a stealth frida-server (renamed binary, non-default port via `adb forward`) that USB discovery can never find (D-8).
 
 ### Fixed (npm)
 - Zip-bomb guard: inputs are capped at 2048 MB and single decompressed entries at 256 MB (`MOBILE_RE_MCP_MAX_FILE_MB` / `MOBILE_RE_MCP_MAX_ENTRY_MB`, `0` disables), checked before decompression on every APK/IPA read (F-NPM-4).
