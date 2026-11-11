@@ -187,6 +187,27 @@ def test_shipped_scripts_use_only_frida_17_globals():
         )
 
 
+def test_java_scripts_are_bundled_with_the_java_bridge():
+    """D-9: frida 17 removed the `Java` global from script runtimes.
+
+    The seven Java-hooking scripts therefore ship as frida-compile
+    bundles with frida-java-bridge compiled in (see build_bundles.sh);
+    a raw source using the classic `Java.perform` global would die with
+    `ReferenceError: 'Java' is not defined` on every modern client.
+    memory_scan is pure-native and ships as raw source.
+    """
+    from mobile_re_mcp.frida_scripts import index
+
+    for meta in index.SCRIPT_CATALOGUE:
+        src = index.get_script_content(meta["name"])
+        if meta["name"] == "memory_scan":
+            continue
+        assert "frida-java-bridge" in src, (
+            f"{meta['name']} must ship as a bundle with frida-java-bridge "
+            "compiled in (frida 17 has no Java global)"
+        )
+
+
 def test_memory_scan_contract_for_frida_find_bytes():
     """frida_find_bytes str.replace-patches these exact lines — they must exist."""
     from mobile_re_mcp.frida_scripts import index

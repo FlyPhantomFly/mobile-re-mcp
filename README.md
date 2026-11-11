@@ -144,7 +144,9 @@ Every tool returns structured JSON with a `status` field (`ok`, `error`, `missin
 | --- | --- | --- |
 | `frida_list_scripts` | list available hook scripts by category (ssl_pinning, root_detection, crypto, memory, hooks, storage, network), including your own | nothing |
 | `frida_get_script` | read the JS source of a named script (8 ship with the package; yours override) | nothing |
-| `frida_run_script` | spawn + inject a named built-in script in one call, with optional config overrides | frida |
+| `frida_run_script` | spawn + inject a named built-in script in one call, with config sent as `{'type':'config', …}` after load | frida |
+
+The 7 Java-hooking scripts ship as pre-built bundles with `frida-java-bridge` compiled in — frida 17 removed the `Java` global from script runtimes, so raw sources would die with `ReferenceError` on every modern client (`memory_scan` is pure-native and ships as-is). Rebuild them with `python/src/mobile_re_mcp/frida_scripts/build_bundles.sh` after editing the raw sources in that folder's `src/`. For a stealth frida-server (renamed binary on a non-default port), set `MOBILE_RE_MCP_FRIDA_ENDPOINT` (below).
 
 **Anti-detection (2)**
 
