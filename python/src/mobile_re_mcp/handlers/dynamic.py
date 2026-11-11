@@ -83,6 +83,7 @@ class DynamicHandler:
 
         package = args.get("package", "")
         script_src = args.get("script", "")
+        script_config = args.get("config") or None
 
         try:
             device = frida.get_usb_device(timeout=10)
@@ -93,7 +94,11 @@ class DynamicHandler:
             self._attached_package = package
             self._output_queue = queue.Queue()
 
-            result = self._load_script(script_src) if script_src else {"script_loaded": False}
+            result = (
+                self._load_script(script_src, config=script_config)
+                if script_src
+                else {"script_loaded": False}
+            )
 
             device.resume(pid)
             return {
@@ -112,6 +117,8 @@ class DynamicHandler:
             return _missing("frida")
 
         package = args.get("package", "")
+        script_src = args.get("script", "")
+        script_config = args.get("config") or None
         try:
             device = frida.get_usb_device(timeout=10)
             session = device.attach(package)
@@ -119,10 +126,17 @@ class DynamicHandler:
             self._frida_session = session
             self._attached_package = package
             self._output_queue = queue.Queue()
+
+            result = (
+                self._load_script(script_src, config=script_config)
+                if script_src
+                else {"script_loaded": False}
+            )
+
             return {
                 "status": "ok",
                 "tool": "frida",
-                "output": {"package": package, "attached": True},
+                "output": {"package": package, "attached": True, **result},
             }
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "tool": "frida", "error": str(exc)}
@@ -132,8 +146,9 @@ class DynamicHandler:
         if self._frida_session is None:
             return {"status": "error", "tool": "frida", "error": "No active Frida session."}
         script_src = args.get("script", "")
+        script_config = args.get("config") or None
         try:
-            result = self._load_script(script_src)
+            result = self._load_script(script_src, config=script_config)
             return {"status": "ok", "tool": "frida", "output": result}
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "tool": "frida", "error": str(exc)}
@@ -164,6 +179,80 @@ class DynamicHandler:
         self._frida_script = None
         self._attached_package = None
         return {"status": "ok", "tool": "frida", "output": {"detached": True}}
+
+    def frida_status(self, args: dict) -> dict:  # noqa: ARG002
+        """No-op read: frida version, devices, and the handler's own state.
+
+        Everything is best-effort: a section that cannot be introspected is
+        reported as null/error instead of failing the whole status. Makes
+        multi-turn sessions legible ("am I attached? to what?") and lets
+        the caller chain "status → decide attach vs spawn".
+        """
+        info: dict = {"frida_version": None, "devices": [], "usb_device": None,
+                      "frida_server_responsive": None, "session": None}
+
+        try:
+            import frida  # type: ignore[import]
+            info["frida_version"] = frida.__version__
+        except ImportError:
+            return {
+                "status": "missing_tool",
+                "tool": "frida_status",
+                "error": "frida is not installed in this Python environment.",
+                "hint": "Run mobile-re-mcp-py --setup, or pip install frida.",
+            }
+
+        try:
+            devices = [
+                {"id": d.id, "name": d.name, "type": d.type}
+                for d in frida.enumerate_devices()
+            ]
+            info["devices"] = devices
+        except Exception as exc:  # noqa: BLE001
+            info["devices"] = []
+            info["devices_error"] = str(exc)
+
+        usb = None
+        for d in info["devices"]:
+            if d.get("type") == "usb":
+                usb = d
+                break
+        info["usb_device"] = usb
+
+        if usb is not None:
+            try:
+                device = frida.get_usb_device(timeout=5)
+                # A single cheap RPC proves frida-server is alive and
+                # answering; enumerate_processes would be much heavier.
+                front = device.get_frontmost_application()
+                info["frida_server_responsive"] = True
+                if front is not None:
+                    info["frontmost_application"] = {
+                        "identifier": front.identifier,
+                        "name": front.name,
+                        "pid": front.pid,
+                    }
+            except Exception as exc:  # noqa: BLE001
+                info["frida_server_responsive"] = False
+                info["frida_server_error"] = str(exc)
+
+        # Handler-local state (no device round-trip).
+        if self._frida_session is None:
+            info["session"] = None
+        else:
+            alive = True
+            try:
+                alive = not self._frida_session.is_detached
+            except Exception:  # noqa: BLE001 — older frida without the flag
+                pass
+            info["session"] = {
+                "attached_package": self._attached_package,
+                "alive": alive,
+                "script_loaded": self._frida_script is not None,
+                "queued_messages": self._output_queue.qsize(),
+            }
+
+        return {"status": "ok", "tool": "frida_status", "output": info}
 
     def objection_run(self, args: dict) -> dict:
         """Run an objection command against a package."""
@@ -251,10 +340,18 @@ class DynamicHandler:
         }
 
     def frida_run_script(self, args: dict) -> dict:
-        """Spawn a package and inject a named built-in script in a single call."""
+        """Spawn a package and inject a named built-in script in a single call.
+
+        *config* (E-PY-6) is posted as `{'type':'config', …}` after the
+        script loads — the shipped scripts re-scan on receipt. The old
+        `var X = …` str.replace injection is gone: quote-bearing values
+        could break the generated source. Scripts that predate the
+        protocol simply ignore the post, which is also why their
+        `var X = ""` first-occurrence lines are kept in the library.
+        """
         package = args.get("package", "")
         script_name = args.get("script_name", "")
-        extra_config = args.get("config", {})
+        extra_config = args.get("config") or {}
 
         content = get_script_content(script_name)
         if content is None:
@@ -266,15 +363,11 @@ class DynamicHandler:
                 "available": avail,
             }
 
-        # Patch config variables into the script if provided
-        if extra_config:
-            for key, val in extra_config.items():
-                if isinstance(val, str):
-                    content = content.replace(f'var {key} = "";', f'var {key} = "{val}";', 1)
-                elif isinstance(val, (int, float)):
-                    content = content.replace(f'var {key} = 0;', f'var {key} = {val};', 1)
-
-        spawn_args = {"package": package, "script": content}
+        spawn_args = {
+            "package": package,
+            "script": content,
+            **({"config": extra_config} if extra_config else {}),
+        }
         return self.frida_spawn(spawn_args)
 
     # =========================================================================
@@ -294,6 +387,7 @@ class DynamicHandler:
 
         package = args.get("package", "")
         script_src = args.get("script", "")
+        script_config = args.get("config") or None
         hluda_port = int(args.get("port", 27043))  # hluda default differs from stock
 
         try:
@@ -322,7 +416,11 @@ class DynamicHandler:
             self._attached_package = package
             self._output_queue = queue.Queue()
 
-            result = self._load_script(script_src) if script_src else {"script_loaded": False}
+            result = (
+                self._load_script(script_src, config=script_config)
+                if script_src
+                else {"script_loaded": False}
+            )
 
             device.resume(pid)
             return {
@@ -554,19 +652,6 @@ send({type: 'done', total_ranges: ranges.length});
             return {"status": "error", "tool": "frida_find_bytes",
                     "error": "Built-in memory_scan script not found."}
 
-        # Patch in config values directly
-        if search_str:
-            scan_script_src = scan_script_src.replace(
-                'var SEARCH_STRING = "";', f'var SEARCH_STRING = "{search_str}";', 1
-            )
-        if search_hex:
-            scan_script_src = scan_script_src.replace(
-                'var SEARCH_HEX = "";', f'var SEARCH_HEX = "{search_hex}";', 1
-            )
-        scan_script_src = scan_script_src.replace(
-            'var MAX_RESULTS = 50;', f'var MAX_RESULTS = {max_results};', 1
-        )
-
         matches: list[dict] = []
         done_event = threading.Event()
 
@@ -579,10 +664,38 @@ send({type: 'done', total_ranges: ranges.length});
             elif payload.get("type") == "scan_complete":
                 done_event.set()
 
+        # E-PY-6: primary path is the config protocol — load the script
+        # unpatched, then post {'type':'config', …}; the script scans on
+        # receipt. Fallback for runtimes without script.post: the var-line
+        # contract (patch `var SEARCH_STRING = "";` first occurrences) —
+        # the script then auto-scans at load.
+        config = {"SEARCH_STRING": search_str, "SEARCH_HEX": search_hex,
+                  "MAX_RESULTS": max_results}
         try:
             script = self._frida_session.create_script(scan_script_src)
             script.on("message", on_message)
             script.load()
+            try:
+                script.post({"type": "config", **config})
+            except Exception:  # noqa: BLE001 — runtime without post support
+                script.unload()
+                matches.clear()
+                done_event.clear()
+                patched = scan_script_src
+                if search_str:
+                    patched = patched.replace(
+                        'var SEARCH_STRING = "";', f'var SEARCH_STRING = "{search_str}";', 1
+                    )
+                if search_hex:
+                    patched = patched.replace(
+                        'var SEARCH_HEX = "";', f'var SEARCH_HEX = "{search_hex}";', 1
+                    )
+                patched = patched.replace(
+                    'var MAX_RESULTS = 50;', f'var MAX_RESULTS = {max_results};', 1
+                )
+                script = self._frida_session.create_script(patched)
+                script.on("message", on_message)
+                script.load()
             done_event.wait(timeout=60)
             script.unload()
         except Exception as exc:  # noqa: BLE001
@@ -595,6 +708,7 @@ send({type: 'done', total_ranges: ranges.length});
                 "pattern": search_str or search_hex,
                 "matches": matches,
                 "total": len(matches),
+                "via": "config-protocol",
             },
         }
 
@@ -602,8 +716,15 @@ send({type: 'done', total_ranges: ranges.length});
     # Internal helpers
     # =========================================================================
 
-    def _load_script(self, src: str) -> dict:
-        """Load and run a Frida script; route output to self._output_queue."""
+    def _load_script(self, src: str, config: Optional[dict] = None) -> dict:
+        """Load and run a Frida script; route output to self._output_queue.
+
+        With *config* (E-PY-6), `{'type':'config', ...}` is posted right
+        after load. Shipped scripts register a `recv('config', …)` handler
+        and re-scan/re-run on receipt; scripts that never recv are simply
+        unaffected. This replaces the old str.replace injection into
+        `var X = …` lines, which broke on quote-bearing values.
+        """
         q = self._output_queue
         script = self._frida_session.create_script(src)
 
@@ -615,5 +736,7 @@ send({type: 'done', total_ranges: ranges.length});
 
         script.on("message", on_message)
         script.load()
+        if config:
+            script.post({"type": "config", **config})
         self._frida_script = script
         return {"script_loaded": True}

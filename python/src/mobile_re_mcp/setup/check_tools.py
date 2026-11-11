@@ -252,7 +252,8 @@ def check_all_tools() -> dict:
         # ── Dynamic instrumentation ────────────────────────────────────────
         _check_python_module("frida", hint="Run mobile-re-mcp-py --setup, or install frida yourself",
                              used_by=["frida_spawn", "frida_attach", "frida_inject", "frida_detach",
-                                      "frida_memdump", "frida_find_bytes", "ssl_kill_switch"]),
+                                      "frida_status", "frida_memdump", "frida_find_bytes",
+                                      "ssl_kill_switch"]),
         _check_python_module("frida-tools", "frida_tools", hint="Run mobile-re-mcp-py --setup, or install frida-tools yourself",
                              used_by=[]),
         _check_binary("frida", "--version", hint="Run mobile-re-mcp-py --setup, or install frida-tools yourself",

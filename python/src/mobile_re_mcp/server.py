@@ -186,6 +186,10 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "package": {"type": "string"},
                 "script": {"type": "string", "description": "Frida JS script content"},
+                "config": {
+                    "type": "object",
+                    "description": "Posted as {'type':'config',…} after load (scripts using recv('config')).",
+                },
             },
             "required": ["package"],
         },
@@ -197,6 +201,11 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "package": {"type": "string"},
+                "script": {"type": "string", "description": "Optional script to load right after attach"},
+                "config": {
+                    "type": "object",
+                    "description": "Posted as {'type':'config',…} after load (scripts using recv('config')).",
+                },
             },
             "required": ["package"],
         },
@@ -208,6 +217,10 @@ TOOL_SCHEMAS: list[dict] = [
             "type": "object",
             "properties": {
                 "script": {"type": "string"},
+                "config": {
+                    "type": "object",
+                    "description": "Posted as {'type':'config',…} after load (scripts using recv('config')).",
+                },
             },
             "required": ["script"],
         },
@@ -220,6 +233,16 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "name": "frida_detach",
         "description": "Detach the current Frida session.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "frida_status",
+        "description": (
+            "No-op read: frida version, connected devices, frida-server "
+            "responsiveness, and the current session state (package, "
+            "script loaded, queued messages). Chain 'status → decide "
+            "attach vs spawn'."
+        ),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -276,7 +299,7 @@ TOOL_SCHEMAS: list[dict] = [
                 "script_name": {"type": "string", "description": "Name from frida_list_scripts"},
                 "config": {
                     "type": "object",
-                    "description": "Optional variable overrides patched into the script",
+                    "description": "Posted as {'type':'config',…} after load (E-PY-6 protocol; shipped scripts re-scan on receipt).",
                 },
             },
             "required": ["package", "script_name"],
@@ -1032,6 +1055,7 @@ def create_server() -> Server:
         "frida_inject": dynamic.frida_inject,
         "frida_read_output": dynamic.frida_read_output,
         "frida_detach": dynamic.frida_detach,
+        "frida_status": dynamic.frida_status,
         "objection_run": dynamic.objection_run,
         # dynamic — script library
         "frida_list_scripts": dynamic.frida_list_scripts,

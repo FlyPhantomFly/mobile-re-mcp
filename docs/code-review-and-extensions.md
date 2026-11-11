@@ -165,15 +165,14 @@ Each item lists: **what the code does today** → **what we propose to add/chang
 - *Proposal:* for each entry record *how the tool is invoked* (CLI vs module vs jar) and check exactly that (apkleaks via `shutil.which`; quark via `shutil.which("quark")` once E-PY-3 lands; remove capstone/keystone checks until a tool uses them; drop `fridump` or actually use it; check medusa-framework via `pip show medusa-framework` + its console script, not `medusa`); add a per-entry `used_by` list of MCP tool names so the assistant can reason about "what breaks if this is missing".
 - *Effort:* S.
 
-**E-PY-6. Config protocol for Frida scripts (the fix for F-PY-5)**
-- *Current:* `frida_run_script` and `frida_find_bytes` patch values into JS source with `str.replace` on magic lines.
-- *Proposal:* standard companion protocol for shipped scripts: script registers a handler for `recv('config', …)`; the Python side sends `{'type':'config', …}` post-load. Fallback: `JSON.stringify`-escape values at the injection point. This removes quote-injection fragility and the "author must include exactly `var X = ""`" contract.
-- *Effort:* S (with E-PY-1's script set).
+**E-PY-6. Config protocol for Frida scripts (the fix for F-PY-5) — *Current: landed*** — **Status: done**
+- *Was:* `frida_run_script` and `frida_find_bytes` patch values into JS source with `str.replace` on magic lines.
+- *Done:* `_load_script(src, config=None)` posts `{'type':'config', …}` right after `script.load()`; `frida_spawn`/`frida_attach`/`frida_inject`/`frida_run_script`/`frida_spawn_hluda` all accept a `config` object and the source is no longer rewritten (quote-bearing values can't break it, and the scripts' `var X = ""` lines stay intact as the documented fallback contract). `frida_find_bytes` is config-protocol-first — load `memory_scan` unpatched, post the search, wait for `scan_complete` — and falls back to the var-line replace only when `script.post` is unavailable (the response carries `via: "config-protocol"` so the active path is visible). Tests: `tests/test_frida_config_protocol.py` (fake session/script: run-script posts instead of patching, find-bytes config-first, post-less runtime falls back to patched source, session guard, drain). Live: on device `f982678d`, `frida_attach('sleep')` + `frida_find_bytes(search_string='sleep')` → 3 rw- matches with `via: "config-protocol"`; `node --check` 8/8 unchanged.
+- *Found on the way (D-5):* the shipped `memory_scan.js` itself referenced the pre-frida-17 bare `process` global — every runtime scan died with `ReferenceError` before this fix; also fixed in-commit.
 
-**E-PY-7. New tool: `frida_status`**
-- *Current:* nothing introspects the handler's session state; the only way to know "am I attached?" is to run something that errors.
-- *Proposal:* a no-op read: package, pid, script(s) loaded, output-queue length, device id — makes multi-turn sessions legible and chainable ("status → decide attach vs spawn").
-- *Effort:* S.
+**E-PY-7. New tool: `frida_status` — *Current: landed*** — **Status: done**
+- *Was:* nothing introspects the handler's session state; the only way to know "am I attached?" is to run something that errors.
+- *Done:* `frida_status()` — a no-op read returning frida's version, every connected device (id/name/type), the USB device, whether frida-server answers (a single `get_frontmost_application()` RPC, with `frontmost_application` when one is up), and the handler's own session state (`attached_package`, `alive`, `script_loaded`, `queued_messages`). Every section is best-effort: a dead server or an old session object degrades that field, not the whole call. Tests: `tests/test_frida_status.py` (6 hermetic cases with a fake frida module: missing engine, detached state, live session, dead server, session without `is_detached`, no-USB short-circuit). Live: device `f982678d` → devices list with the USB entry, `frida_server_responsive: true`.
 
 **E-PY-8. New tool: `adb_ui_dump`**
 - *Current:* the server can screenshot the UI (`scrcpy_screenshot`), but the assistant has no structured view of it — driving test flows ("tap login") is guesswork from pixels.
@@ -241,6 +240,8 @@ New findings made while fixing Part 1/2 items. They are logged here instead of f
 | D-2 | Check entries `binwalk`, `apk-mitm`, `frida-compile`, `frida-ps` are probed but no handler invokes them; they now carry `used_by: []` and are candidates for removal in a later cleanup. | `setup/check_tools.py` | low |
 | D-3 | `scripts/android-api-extractor/analyze_apk.py` (legacy helper) contains dead code paths that are unsafe if ever invoked (un-validated argv use); it is not reachable from either scaffold. Kept out of scope; candidate for deletion. | `scripts/` | low |
 | D-4 | `find_cli` initially used `Path(sys.executable).resolve()`, which follows a venv interpreter's symlink to the *base* interpreter — invisible to the venv's console scripts. Fixed in-commit with `absolute()` before shipping; noted here because the trap is easy to re-introduce. | `clitools.py` | fixed in-commit |
+| D-5 | Shipped `memory_scan.js` called the bare `process` global (`process.enumerateRanges`), which frida 17 (QuickJS) no longer defines — every scan died with `ReferenceError: 'process' is not defined` at runtime, invisible to `node --check`. Fixed in-commit to the capital-P Frida API; guarded by `test_shipped_scripts_use_only_frida_17_globals` scanning all 8 scripts for the pre-QuickJS names. | `frida_scripts/` | fixed in-commit |
+| D-6 | `frida_attach(package)` resolves through frida's process-name lookup, which matches the app *label* ("Termux:API"), not the package identifier ("com.termux.api") — attach by package id fails on real devices even when the process runs. Not yet fixed; a follow-up should map identifier → pid via `enumerate_applications()` before falling back. | `handlers/dynamic.py` | open (low) |
 
 
 

@@ -163,6 +163,30 @@ def test_shipped_scripts_register_and_rearm_the_config_protocol():
         assert "function _onConfig" in src, meta["name"]
 
 
+def test_shipped_scripts_use_only_frida_17_globals():
+    """D-5: the bare `process` global is gone in frida 17 (QuickJS).
+
+    memory_scan called `process.enumerateRanges("rw-")`, which turned
+    every scan into `ReferenceError: 'process' is not defined` at
+    runtime — `node --check` cannot catch missing script globals, so the
+    guard is a source-level scan for the lowercase pre-QuickJS names.
+    """
+    import re
+
+    from mobile_re_mcp.frida_scripts import index
+
+    bare = re.compile(
+        r"(?<![.\w])process\.(enumerateRanges|enumerateModules|enumerateThreads|"
+        r"enumerateMallocRanges|getModuleByName|findModuleByName|"
+        r"isDebuggerPaused|setExceptionHandler)\b"
+    )
+    for meta in index.SCRIPT_CATALOGUE:
+        src = index.get_script_content(meta["name"])
+        assert not bare.search(src), (
+            f"{meta['name']} uses the pre-frida-17 bare `process` global"
+        )
+
+
 def test_memory_scan_contract_for_frida_find_bytes():
     """frida_find_bytes str.replace-patches these exact lines — they must exist."""
     from mobile_re_mcp.frida_scripts import index

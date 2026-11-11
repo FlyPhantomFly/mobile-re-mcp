@@ -74,7 +74,9 @@ function scan() {
         return;
     }
 
-    var ranges = process.enumerateRanges("rw-");
+    // Frida 17 (QuickJS) has no bare `process` global; prefer the
+    // capital-P Frida API and stay tolerant of older runtimes.
+    var ranges = Process.enumerateRanges("rw-");
     var pending = ranges.length;
     var scanned = 0;
 
