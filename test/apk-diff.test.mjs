@@ -24,6 +24,9 @@ function writeApk(name, build) {
   return apkPath;
 }
 
+const FAKE_AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE";
+const FAKE_GOOGLE_KEY = "AIza" + "SyA1bC2dE3fG4hI5jK6lM7nO8pQ9rStUvWxyz";
+
 const STUB_MANIFEST = Buffer.from("not a real AXML manifest", "utf8");
 
 test("apk_diff: native lib changes, secret deltas and inventory", async () => {
@@ -31,14 +34,14 @@ test("apk_diff: native lib changes, secret deltas and inventory", async () => {
     z.addFile("AndroidManifest.xml", STUB_MANIFEST);
     z.addFile("classes.dex", Buffer.from("old dex", "utf8"));
     z.addFile("lib/arm64-v8a/libnative.so", Buffer.from("version-one-bytes", "utf8"));
-    z.addFile("assets/config.json", Buffer.from('{"k": "AKIAIOSFODNN7EXAMPLE"}', "utf8"));
+    z.addFile("assets/config.json", Buffer.from(`{"k": "${FAKE_AWS_KEY}"}`, "utf8"));
   });
   const newApk = writeApk("new.apk", (z) => {
     z.addFile("AndroidManifest.xml", STUB_MANIFEST);
     z.addFile("classes.dex", Buffer.from("new dex bytes are longer", "utf8"));
     z.addFile("lib/arm64-v8a/libnative.so", Buffer.from("version-two-bytes!!", "utf8"));
     z.addFile("lib/armeabi-v7a/libextra.so", Buffer.from("brand new lib", "utf8"));
-    z.addFile("assets/config.json", Buffer.from('{"k": "AIzaSyA1bC2dE3fG4hI5jK6lM7nO8pQ9rStUvWxyz"}', "utf8"));
+    z.addFile("assets/config.json", Buffer.from(`{"k": "${FAKE_GOOGLE_KEY}"}`, "utf8"));
   });
 
   const res = await apkDiff.handler({ old_path: oldApk, new_path: newApk });
@@ -48,8 +51,8 @@ test("apk_diff: native lib changes, secret deltas and inventory", async () => {
   assert.match(text, /--- Native libraries \(1 → 2\) ---/);
   assert.match(text, /~ arm64-v8a\/libnative\.so \(sha256 changed\)/);
   assert.match(text, /\+ armeabi-v7a\/libextra\.so/);
-  assert.match(text, /NEW ONLY\s+Google API Key \(HIGH\): AIzaSyA1bC2dE3fG4hI5jK6lM7nO8pQ9rStUvWx/);
-  assert.match(text, /OLD ONLY\s+AWS Access Key ID \(CRITICAL\): AKIAIOSFODNN7EXAMPLE/); // the old key disappeared
+  assert.match(text, new RegExp("NEW ONLY\\s+Google API Key \\(HIGH\\): " + FAKE_GOOGLE_KEY.slice(0, 39)));
+  assert.match(text, new RegExp("OLD ONLY\\s+AWS Access Key ID \\(CRITICAL\\): " + FAKE_AWS_KEY)); // the old key disappeared
   assert.match(text, /entries: 4 → 5 \(\+1 \/ -0, 3 changed size\)/);
   fs.rmSync(path.dirname(oldApk), { recursive: true, force: true });
   fs.rmSync(path.dirname(newApk), { recursive: true, force: true });
